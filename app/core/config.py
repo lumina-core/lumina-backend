@@ -6,5 +6,10 @@ class Settings(BaseSettings):
     version: str = "0.1.0"
     debug: bool = True
 
+    database_url: str
+
+    class Config:
+        env_file = ".env"
+
 
 settings = Settings()
