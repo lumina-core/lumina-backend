@@ -148,7 +148,9 @@ async def stream_agent_response(
         yield {"type": "error", "message": str(e)}
 
 
-async def invoke_agent(query: str, chat_history: Optional[list] = None) -> dict[str, Any]:
+async def invoke_agent(
+    query: str, chat_history: Optional[list] = None
+) -> dict[str, Any]:
     """非流式调用Agent"""
     agent = get_news_agent()
 
