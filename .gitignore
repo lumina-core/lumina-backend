@@ -206,3 +206,10 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# LangGraph
+.langgraph_api/
+
+# Backfill scripts progress
+scripts/.news_backfill_*_progress.json
+scripts/backfill_news_*.py
