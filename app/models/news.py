@@ -9,7 +9,7 @@ class NewsArticleBase(SQLModel):
 
     news_date: date = Field(index=True, description="新闻日期")
     title: str = Field(max_length=500, description="新闻标题")
-    url: str = Field(unique=True, index=True, max_length=1000, description="新闻URL")
+    url: str = Field(max_length=1000, unique=True, index=True, description="新闻URL")
     content: str = Field(description="新闻正文内容")
 
 

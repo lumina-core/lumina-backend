@@ -3,18 +3,26 @@ name = "lumina-backend"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.17.2",
     "apscheduler>=3.11.2",
     "asyncpg>=0.31.0",
-    "fastapi>=0.128.0",
+    "email-validator>=2.3.0",
+    "fastapi>=0.115.14",
     "greenlet>=3.3.0",
     "httpx>=0.28.1",
+    "langchain>=1.2.0",
+    "langchain-community>=0.4.1",
+    "langchain-ollama>=1.0.1",
+    "langchain-openai>=1.1.6",
+    "langchain-postgres>=0.0.16",
+    "langgraph-cli[inmem]>=0.4.11",
     "loguru>=0.7.3",
+    "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
     "python-dotenv>=1.2.1",
     "selectolax>=0.4.6",
-    "sqlmodel>=0.0.31",
+    "sqlmodel>=0.0.30",
     "uvicorn>=0.40.0",
 ]
