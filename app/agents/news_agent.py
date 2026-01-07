@@ -103,6 +103,7 @@ async def stream_agent_response(
             - {"type": "token", "content": "..."}  # 模型输出token
             - {"type": "tool_start", "name": "...", "input": {...}}  # 工具调用开始
             - {"type": "tool_end", "name": "...", "output": "..."}  # 工具调用结束
+            - {"type": "usage", "input_tokens": N, "output_tokens": N}  # token用量
             - {"type": "done"}  # 完成
             - {"type": "error", "message": "..."}  # 错误
     """
@@ -112,6 +113,9 @@ async def stream_agent_response(
     if chat_history:
         messages.extend(chat_history)
     messages.append({"role": "user", "content": query})
+
+    total_input_tokens = 0
+    total_output_tokens = 0
 
     try:
         async for event in agent.astream_events(
@@ -124,6 +128,18 @@ async def stream_agent_response(
                 chunk = event["data"].get("chunk")
                 if chunk and hasattr(chunk, "content") and chunk.content:
                     yield {"type": "token", "content": chunk.content}
+
+            elif kind == "on_chat_model_end":
+                # 获取 token 用量
+                output = event["data"].get("output")
+                if (
+                    output
+                    and hasattr(output, "usage_metadata")
+                    and output.usage_metadata
+                ):
+                    usage = output.usage_metadata
+                    total_input_tokens += usage.get("input_tokens", 0)
+                    total_output_tokens += usage.get("output_tokens", 0)
 
             elif kind == "on_tool_start":
                 yield {
@@ -142,6 +158,12 @@ async def stream_agent_response(
                     "output": str(output)[:500],
                 }
 
+        # 返回 token 用量统计
+        yield {
+            "type": "usage",
+            "input_tokens": total_input_tokens,
+            "output_tokens": total_output_tokens,
+        }
         yield {"type": "done"}
 
     except Exception as e:

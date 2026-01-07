@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlmodel import SQLModel
 
-from app.api.routes import users, products, tasks, news, chat
+from app.api.routes import users, products, tasks, news, chat, credits
 from app.core.config import settings
 from app.core.database import engine, ensure_database_exists
 from app.core.scheduler import scheduler_manager
@@ -44,6 +44,7 @@ app.include_router(products.router, prefix="/api/v1/products", tags=["products"]
 app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
 app.include_router(news.router, prefix="/api/v1/news", tags=["news"])
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"])
+app.include_router(credits.router, prefix="/api/v1/credits", tags=["credits"])
 
 
 @app.get("/")

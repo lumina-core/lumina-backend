@@ -69,6 +69,7 @@ async def create_tables():
         # 导入所有模型，确保 SQLModel 知道它们
         from app.models.user import User  # noqa: F401
         from app.models.news import NewsArticle  # noqa: F401
+        from app.models.credit import CreditUsageLog, InviteCode  # noqa: F401
 
         async with engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
