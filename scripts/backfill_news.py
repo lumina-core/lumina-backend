@@ -52,7 +52,9 @@ async def backfill(start_date: date, end_date: date):
     finally:
         await news_scraper_service.close()
 
-    logger.info(f"完成 - 成功: {stats['success']} | 跳过: {stats['skipped']} | 失败: {stats['failed']}")
+    logger.info(
+        f"完成 - 成功: {stats['success']} | 跳过: {stats['skipped']} | 失败: {stats['failed']}"
+    )
 
 
 if __name__ == "__main__":

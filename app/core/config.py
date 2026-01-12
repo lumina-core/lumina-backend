@@ -1,5 +1,3 @@
-from typing import Optional
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,7 +10,7 @@ class Settings(BaseSettings):
     version: str = "0.1.0"
     debug: bool = True
 
-    database_url: Optional[str] = None
+    database_url: str = "sqlite+aiosqlite:///./data/lumina.db"
 
 
 settings = Settings()

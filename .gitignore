@@ -213,3 +213,10 @@ __marimo__/
 # Backfill scripts progress
 scripts/.news_backfill_*_progress.json
 scripts/backfill_news_*.py
+
+# Data files (SQLite + Chroma vector store)
+# Upload manually to server: tar -czvf data.tar.gz data/
+data/
+
+# Temp files
+tmp/

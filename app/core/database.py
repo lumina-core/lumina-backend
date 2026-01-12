@@ -1,8 +1,9 @@
-from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from sqlmodel import SQLModel
-import asyncpg
+from pathlib import Path
+
 from loguru import logger
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlmodel import SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
 
@@ -22,43 +23,15 @@ async def get_session():
 
 
 async def ensure_database_exists():
-    """自动检查并创建数据库"""
-    from urllib.parse import urlparse, urlunparse
-
-    parsed_url = urlparse(settings.database_url)
-    db_name = parsed_url.path.lstrip("/")
-
-    postgres_url = urlunparse(
-        (
-            parsed_url.scheme,
-            parsed_url.netloc,
-            "/postgres",
-            parsed_url.params,
-            parsed_url.query,
-            parsed_url.fragment,
-        )
-    )
-
-    try:
-        conn = await asyncpg.connect(
-            postgres_url.replace("postgresql+asyncpg://", "postgresql://")
-        )
-
-        exists = await conn.fetchval(
-            "SELECT 1 FROM pg_database WHERE datname = $1", db_name
-        )
-
-        if not exists:
-            await conn.execute(f'CREATE DATABASE "{db_name}"')
-            logger.info(f"✓ Database '{db_name}' created successfully")
-        else:
-            logger.info(f"✓ Database '{db_name}' already exists")
-
-        await conn.close()
-
-    except Exception as e:
-        logger.error(f"Error ensuring database exists: {e}")
-        raise
+    """确保SQLite数据库文件目录存在"""
+    db_url = settings.database_url
+    if db_url.startswith("sqlite"):
+        db_path = db_url.replace("sqlite+aiosqlite:///", "").replace("sqlite:///", "")
+        if db_path.startswith("./"):
+            db_path = db_path[2:]
+        db_file = Path(db_path)
+        db_file.parent.mkdir(parents=True, exist_ok=True)
+        logger.info(f"✓ SQLite database path ready: {db_file}")
 
 
 async def create_tables():
@@ -66,10 +39,9 @@ async def create_tables():
     try:
         logger.info("开始创建数据库表...")
 
-        # 导入所有模型，确保 SQLModel 知道它们
-        from app.models.user import User  # noqa: F401
-        from app.models.news import NewsArticle  # noqa: F401
         from app.models.credit import CreditUsageLog, InviteCode  # noqa: F401
+        from app.models.news import NewsArticle  # noqa: F401
+        from app.models.user import User  # noqa: F401
 
         async with engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
