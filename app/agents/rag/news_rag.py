@@ -1,30 +1,30 @@
 """
 新闻RAG服务 - 基于本地Ollama embedding模型
-使用 langchain_postgres 存储向量数据到PostgreSQL
+使用 Chroma 存储向量数据到本地文件
 """
 
 import os
 from datetime import date
+from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
+from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_ollama import OllamaEmbeddings
-from langchain_postgres import PGEngine, PGVectorStore
 from loguru import logger
-from sqlalchemy import create_engine, text
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "").replace("+asyncpg", "+psycopg")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "qwen3-embedding")
-VECTOR_TABLE = os.getenv("VECTOR_TABLE", "news_embeddings")
-VECTOR_SIZE = int(os.getenv("VECTOR_SIZE", "4096"))
+CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma_db")
+VECTOR_COLLECTION = os.getenv("VECTOR_COLLECTION", "news_embeddings")
 
 
-def get_pg_engine() -> PGEngine:
-    """获取PGEngine实例"""
-    return PGEngine.from_connection_string(url=DATABASE_URL)
+def get_sync_database_url() -> str:
+    """获取同步数据库URL（将aiosqlite转换为sqlite）"""
+    url = os.getenv("DATABASE_URL", "sqlite:///./data/lumina.db")
+    return url.replace("+aiosqlite", "")
 
 
 def get_embeddings() -> OllamaEmbeddings:
@@ -32,46 +32,18 @@ def get_embeddings() -> OllamaEmbeddings:
     return OllamaEmbeddings(model=EMBEDDING_MODEL)
 
 
-def ensure_vector_table(pg_engine: PGEngine, recreate: bool = False):
-    """确保向量表存在，自动创建pgvector扩展和表"""
-    sync_engine = create_engine(DATABASE_URL)
-    with sync_engine.connect() as conn:
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        if recreate:
-            conn.execute(text(f"DROP TABLE IF EXISTS {VECTOR_TABLE}"))
-            conn.commit()
-            pg_engine.init_vectorstore_table(
-                table_name=VECTOR_TABLE,
-                vector_size=VECTOR_SIZE,
-                overwrite_existing=False,
-            )
-            return
+def get_vector_store(embeddings: Optional[OllamaEmbeddings] = None) -> Chroma:
+    """获取Chroma向量存储"""
+    if embeddings is None:
+        embeddings = get_embeddings()
 
-        result = conn.execute(
-            text(
-                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = :table_name)"
-            ),
-            {"table_name": VECTOR_TABLE},
-        )
-        table_exists = result.scalar()
+    persist_dir = Path(CHROMA_PERSIST_DIR)
+    persist_dir.mkdir(parents=True, exist_ok=True)
 
-    if not table_exists:
-        pg_engine.init_vectorstore_table(
-            table_name=VECTOR_TABLE,
-            vector_size=VECTOR_SIZE,
-            overwrite_existing=False,
-        )
-
-
-def get_vector_store(
-    pg_engine: PGEngine, embeddings: OllamaEmbeddings
-) -> PGVectorStore:
-    """获取向量存储"""
-    ensure_vector_table(pg_engine)
-    return PGVectorStore.create_sync(
-        engine=pg_engine,
-        table_name=VECTOR_TABLE,
-        embedding_service=embeddings,
+    return Chroma(
+        collection_name=VECTOR_COLLECTION,
+        embedding_function=embeddings,
+        persist_directory=str(persist_dir),
     )
 
 
@@ -86,18 +58,20 @@ def fetch_news_articles(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
 ) -> list[dict]:
-    """从数据库获取新闻文章"""
-    engine = create_engine(DATABASE_URL)
+    """从SQLite数据库获取新闻文章"""
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(get_sync_database_url())
 
     query = "SELECT id, news_date, title, url, content FROM news_articles WHERE 1=1"
     params = {}
 
     if start_date:
         query += " AND news_date >= :start_date"
-        params["start_date"] = start_date
+        params["start_date"] = str(start_date)
     if end_date:
         query += " AND news_date <= :end_date"
-        params["end_date"] = end_date
+        params["end_date"] = str(end_date)
 
     query += " ORDER BY news_date ASC LIMIT :limit OFFSET :offset"
     params["limit"] = limit
@@ -113,17 +87,19 @@ def count_news_articles(
     end_date: Optional[date] = None,
 ) -> int:
     """统计日期范围内的新闻文章总数"""
-    engine = create_engine(DATABASE_URL)
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(get_sync_database_url())
 
     query = "SELECT COUNT(*) FROM news_articles WHERE 1=1"
     params = {}
 
     if start_date:
         query += " AND news_date >= :start_date"
-        params["start_date"] = start_date
+        params["start_date"] = str(start_date)
     if end_date:
         query += " AND news_date <= :end_date"
-        params["end_date"] = end_date
+        params["end_date"] = str(end_date)
 
     with engine.connect() as conn:
         result = conn.execute(text(query), params)
@@ -135,11 +111,14 @@ def news_to_documents(articles: list[dict]) -> list[Document]:
     documents = []
     for article in articles:
         page_content = f"{article['title']}\n\n{article['content']}"
+        news_date = article["news_date"]
+        if isinstance(news_date, str):
+            news_date = date.fromisoformat(news_date)
         metadata = {
             "news_id": article["id"],
             "title": article["title"],
-            "news_date": str(article["news_date"]),
-            "news_date_int": date_to_int(article["news_date"]),
+            "news_date": str(news_date),
+            "news_date_int": date_to_int(news_date),
             "url": article["url"],
         }
         documents.append(Document(page_content=page_content, metadata=metadata))
@@ -160,9 +139,8 @@ def index_news(
         logger.warning("无文章需要索引")
         return []
 
-    pg_engine = get_pg_engine()
     embeddings = get_embeddings()
-    vector_store = get_vector_store(pg_engine, embeddings)
+    vector_store = get_vector_store(embeddings)
 
     all_doc_ids = []
     offset = 0
@@ -202,53 +180,101 @@ def search_news(
     content_contains: Optional[str] = None,
 ) -> list[Document]:
     """语义搜索新闻，支持多种过滤条件"""
-    embeddings = get_embeddings()
-    query_embedding = embeddings.embed_query(query)
+    vector_store = get_vector_store()
 
-    engine = create_engine(DATABASE_URL)
-
-    sql = f"""
-        SELECT 
-            langchain_id,
-            content,
-            langchain_metadata,
-            embedding <=> :embedding AS distance
-        FROM {VECTOR_TABLE}
-        WHERE 1=1
-    """
-    params: dict = {"embedding": str(query_embedding)}
+    where_filter = None
+    where_conditions = []
 
     if start_date_int is not None:
-        sql += " AND (langchain_metadata->>'news_date_int')::int >= :start_date"
-        params["start_date"] = start_date_int
+        where_conditions.append({"news_date_int": {"$gte": start_date_int}})
     if end_date_int is not None:
-        sql += " AND (langchain_metadata->>'news_date_int')::int <= :end_date"
-        params["end_date"] = end_date_int
+        where_conditions.append({"news_date_int": {"$lte": end_date_int}})
 
+    if len(where_conditions) == 1:
+        where_filter = where_conditions[0]
+    elif len(where_conditions) > 1:
+        where_filter = {"$and": where_conditions}
+
+    results = vector_store.similarity_search(
+        query=query,
+        k=k * 3 if (title_contains or content_contains) else k,
+        filter=where_filter,
+    )
+
+    if title_contains or content_contains:
+        filtered_results = []
+        for doc in results:
+            if (
+                title_contains
+                and title_contains.lower() not in doc.metadata.get("title", "").lower()
+            ):
+                continue
+            if (
+                content_contains
+                and content_contains.lower() not in doc.page_content.lower()
+            ):
+                continue
+            filtered_results.append(doc)
+            if len(filtered_results) >= k:
+                break
+        return filtered_results
+
+    return results[:k]
+
+
+def clear_vector_store():
+    """清空向量存储（用于重建索引）"""
+    import shutil
+
+    persist_dir = Path(CHROMA_PERSIST_DIR)
+    if persist_dir.exists():
+        shutil.rmtree(persist_dir)
+        logger.info(f"已清空向量存储: {persist_dir}")
+
+
+def int_to_date(d: int) -> date:
+    """整数 YYYYMMDD 格式转为日期"""
+    year = d // 10000
+    month = (d % 10000) // 100
+    day = d % 100
+    return date(year, month, day)
+
+
+def list_news(
+    start_date_int: Optional[int] = None,
+    end_date_int: Optional[int] = None,
+    title_contains: Optional[str] = None,
+    content_contains: Optional[str] = None,
+    limit: int = 100,
+) -> list[Document]:
+    """
+    按条件列出新闻（不使用语义搜索，直接从数据库查询）
+    """
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(get_sync_database_url())
+
+    query = "SELECT id, news_date, title, url, content FROM news_articles WHERE 1=1"
+    params = {}
+
+    if start_date_int is not None:
+        params["start_date"] = str(int_to_date(start_date_int))
+        query += " AND news_date >= :start_date"
+    if end_date_int is not None:
+        params["end_date"] = str(int_to_date(end_date_int))
+        query += " AND news_date <= :end_date"
     if title_contains:
-        sql += " AND langchain_metadata->>'title' ILIKE :title_pattern"
-        params["title_pattern"] = f"%{title_contains}%"
-
+        params["title_kw"] = f"%{title_contains}%"
+        query += " AND title LIKE :title_kw"
     if content_contains:
-        sql += " AND content ILIKE :content_pattern"
-        params["content_pattern"] = f"%{content_contains}%"
+        params["content_kw"] = f"%{content_contains}%"
+        query += " AND content LIKE :content_kw"
 
-    sql += " ORDER BY distance ASC LIMIT :k"
-    params["k"] = k
+    query += " ORDER BY news_date DESC LIMIT :limit"
+    params["limit"] = limit
 
     with engine.connect() as conn:
-        result = conn.execute(text(sql), params)
-        rows = result.fetchall()
+        result = conn.execute(text(query), params)
+        articles = [dict(row._mapping) for row in result]
 
-    documents = []
-    for row in rows:
-        metadata = row.langchain_metadata or {}
-        documents.append(
-            Document(
-                page_content=row.content,
-                metadata=metadata,
-                id=str(row.langchain_id),
-            )
-        )
-
-    return documents
+    return news_to_documents(articles)

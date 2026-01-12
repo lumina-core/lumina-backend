@@ -10,52 +10,83 @@ from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.graph.state import CompiledStateGraph
 
-from app.agents.rag.news_rag import search_news
+from app.agents.rag.news_rag import list_news, search_news
 
 load_dotenv()
 
 _agent: Optional[CompiledStateGraph] = None
 
+MAX_DISPLAY_COUNT = 20
+
+
+def _format_results(results: list, total_count: int) -> list[dict]:
+    """格式化搜索结果，超过数量限制时添加提示"""
+    display_results = results[:MAX_DISPLAY_COUNT]
+
+    formatted = [
+        {
+            "title": doc.metadata.get("title"),
+            "news_date": doc.metadata.get("news_date"),
+            "url": doc.metadata.get("url"),
+            "content": doc.page_content[:1000],
+        }
+        for doc in display_results
+    ]
+
+    if total_count > MAX_DISPLAY_COUNT:
+        formatted.append(
+            {
+                "notice": f"共找到 {total_count} 条结果，由于数量较多，仅展示前 {MAX_DISPLAY_COUNT} 条。如需查看更多，请缩小日期范围或添加更多筛选条件。"
+            }
+        )
+
+    return formatted
+
 
 @tool
 def search_news_tool(
-    query: str,
-    k: int = 5,
+    query: Optional[str] = None,
+    k: Optional[int] = None,
     start_date_int: Optional[int] = None,
     end_date_int: Optional[int] = None,
     title_contains: Optional[str] = None,
     content_contains: Optional[str] = None,
 ) -> list[dict]:
     """
-    语义搜索新闻文章，支持多种过滤条件。
+    搜索新闻文章，支持语义搜索和条件筛选两种模式。
 
     Args:
-        query: 搜索查询文本，用于语义相似度匹配（embedding搜索）
-        k: 返回结果数量，默认5条
+        query: 搜索查询文本，用于语义相似度匹配（embedding搜索）。
+               如果不提供，则按条件直接列出新闻（不使用语义搜索）。
+        k: 返回结果数量。语义搜索时默认5条，列表模式时默认100条。
         start_date_int: 开始日期筛选，格式YYYYMMDD（如20250101），可选
         end_date_int: 结束日期筛选，格式YYYYMMDD（如20251231），可选
         title_contains: 标题必须包含的关键词（不区分大小写），可选
         content_contains: 内容必须包含的关键词（不区分大小写），可选
 
     Returns:
-        新闻列表，每条包含 title, news_date, content 字段
+        新闻列表，每条包含 title, news_date, url, content 字段。
+        超过20条时仅展示前20条并附带提示信息。
     """
-    results = search_news(
-        query=query,
-        k=k,
-        start_date_int=start_date_int,
-        end_date_int=end_date_int,
-        title_contains=title_contains,
-        content_contains=content_contains,
-    )
-    return [
-        {
-            "title": doc.metadata.get("title"),
-            "news_date": doc.metadata.get("news_date"),
-            "content": doc.page_content[:1000],
-        }
-        for doc in results
-    ]
+    if query:
+        results = search_news(
+            query=query,
+            k=k or 5,
+            start_date_int=start_date_int,
+            end_date_int=end_date_int,
+            title_contains=title_contains,
+            content_contains=content_contains,
+        )
+    else:
+        results = list_news(
+            start_date_int=start_date_int,
+            end_date_int=end_date_int,
+            title_contains=title_contains,
+            content_contains=content_contains,
+            limit=k or 100,
+        )
+
+    return _format_results(results, len(results))
 
 
 def _create_model() -> ChatOpenAI:
@@ -183,3 +214,6 @@ async def invoke_agent(
 
     result = await agent.ainvoke({"messages": messages})
     return result
+
+
+# agent = create_news_agent()
