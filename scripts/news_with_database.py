@@ -1,6 +1,8 @@
 """新闻服务完整示例：爬虫 + 数据库存储
 
 演示如何使用 NewsService 完成从爬取到存储的完整流程
+
+uv run -m scripts.news_with_database
 """
 
 import asyncio
@@ -22,7 +24,7 @@ async def example_fetch_and_save():
     """示例 2: 爬取并保存新闻到数据库"""
     logger.info("\n示例 2: 爬取并保存新闻")
 
-    target_date = date(2025, 11, 5)
+    target_date = date(2026, 11, 5)
 
     async for session in get_session():
         news_service = NewsService(session)

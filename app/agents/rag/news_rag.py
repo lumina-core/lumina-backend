@@ -11,14 +11,14 @@ from typing import Optional
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
-from langchain_ollama import OllamaEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from loguru import logger
 
 load_dotenv()
 
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "qwen3-embedding")
 CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma_db")
 VECTOR_COLLECTION = os.getenv("VECTOR_COLLECTION", "news_embeddings")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "qwen/qwen3-embedding-8b")
 
 
 def get_sync_database_url() -> str:
@@ -27,12 +27,16 @@ def get_sync_database_url() -> str:
     return url.replace("+aiosqlite", "")
 
 
-def get_embeddings() -> OllamaEmbeddings:
-    """获取Ollama embedding服务"""
-    return OllamaEmbeddings(model=EMBEDDING_MODEL)
+def get_embeddings() -> OpenAIEmbeddings:
+    """获取OpenRouter embedding服务"""
+    return OpenAIEmbeddings(
+        model=EMBEDDING_MODEL,
+        openai_api_base=os.getenv("OPENROUTER_BASE_URL"),
+        openai_api_key=os.getenv("OPENAI_API_KEY"),
+    )
 
 
-def get_vector_store(embeddings: Optional[OllamaEmbeddings] = None) -> Chroma:
+def get_vector_store(embeddings: Optional[OpenAIEmbeddings] = None) -> Chroma:
     """获取Chroma向量存储"""
     if embeddings is None:
         embeddings = get_embeddings()

@@ -1,3 +1,7 @@
+"""
+uv run -m scripts.backfill_news
+"""
+
 import asyncio
 from datetime import date, timedelta
 
