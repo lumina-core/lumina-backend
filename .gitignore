@@ -220,3 +220,8 @@ data/
 
 # Temp files
 tmp/
+
+# Compressed archives
+*.tar.gz
+*.tar.zst
+*.zip

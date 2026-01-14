@@ -61,3 +61,41 @@ app/
 scripts/
 └── setup.sh               # Setup script for initialization
 ```
+
+## Data Migration
+
+### Compress data directory
+
+```bash
+# tar.gz (recommended)
+tar -czvf data.tar.gz data/
+
+# tar.zst (faster, smaller, requires zstd)
+tar -I zstd -cvf data.tar.zst data/
+
+# zip
+zip -r data.zip data/
+```
+
+### Upload to server
+
+```bash
+# scp
+scp data.tar.gz user@server:/path/to/destination/
+
+# rsync (supports resume)
+rsync -avzP data.tar.gz user@server:/path/to/destination/
+```
+
+### Extract on server
+
+```bash
+# tar.gz
+tar -xzvf data.tar.gz
+
+# tar.zst
+tar -I zstd -xvf data.tar.zst
+
+# zip
+unzip data.zip
+```
