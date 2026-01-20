@@ -182,8 +182,11 @@ def search_news(
     end_date_int: Optional[int] = None,
     title_contains: Optional[str] = None,
     content_contains: Optional[str] = None,
+    max_retries: int = 3,
 ) -> list[Document]:
     """语义搜索新闻，支持多种过滤条件"""
+    import time
+
     vector_store = get_vector_store()
 
     where_filter = None
@@ -199,11 +202,25 @@ def search_news(
     elif len(where_conditions) > 1:
         where_filter = {"$and": where_conditions}
 
-    results = vector_store.similarity_search(
-        query=query,
-        k=k * 3 if (title_contains or content_contains) else k,
-        filter=where_filter,
-    )
+    # 重试机制：处理 embedding API 偶发返回空数据的问题
+    results = []
+    for attempt in range(max_retries):
+        try:
+            results = vector_store.similarity_search(
+                query=query,
+                k=k * 3 if (title_contains or content_contains) else k,
+                filter=where_filter,
+            )
+            break
+        except ValueError as e:
+            if "No embedding data received" in str(e):
+                logger.warning(f"Embedding API 返回空数据，第 {attempt + 1}/{max_retries} 次尝试")
+                if attempt < max_retries - 1:
+                    time.sleep(0.5 * (attempt + 1))
+                else:
+                    logger.error("Embedding API 多次返回空数据，语义搜索降级为空结果")
+            else:
+                raise
 
     if title_contains or content_contains:
         filtered_results = []
