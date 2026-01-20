@@ -5,7 +5,9 @@ from datetime import datetime
 from typing import Any, AsyncGenerator, Optional
 
 from dotenv import load_dotenv
+from httpx import Timeout
 from langchain.agents import create_agent
+from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.graph.state import CompiledStateGraph
@@ -27,7 +29,7 @@ def _format_results(results: list, total_count: int) -> list[dict]:
         {
             "title": doc.metadata.get("title"),
             "news_date": doc.metadata.get("news_date"),
-            # "url": doc.metadata.get("url"),
+            "url": doc.metadata.get("url"),
             # "content": doc.page_content[:1000],
             "content": doc.page_content,
         }
@@ -109,21 +111,41 @@ def search_news_tool(
 
 def _create_model() -> ChatOpenAI:
     """创建LLM模型实例"""
+    timeout = Timeout(
+        connect=10.0,
+        read=180.0,  # 流式响应需要更长的读取超时
+        write=30.0,
+        pool=30.0,
+    )
     return ChatOpenAI(
         model=os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.5"),
         api_key=os.getenv("OPENAI_API_KEY"),
         base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
         temperature=float(os.getenv("OPENROUTER_TEMPERATURE", "0.6")),
         max_tokens=int(os.getenv("OPENROUTER_MAX_TOKENS", "8192")),
-        timeout=int(os.getenv("OPENROUTER_TIMEOUT", "30")),
+        timeout=timeout,
         max_retries=int(os.getenv("OPENROUTER_MAX_RETRIES", "3")),
         streaming=True,
+    )
+
+
+def _create_tavily_tool() -> TavilySearchResults:
+    """创建Tavily联网搜索工具"""
+    return TavilySearchResults(
+        max_results=5,
+        search_depth="advanced",
+        include_answer=True,
+        include_raw_content=False,
+        name="web_search",
+        description="联网搜索工具，用于搜索互联网上的最新信息。当本地新闻库无法满足用户需求时使用，例如：查询实时新闻、最新事件、公司官网信息、维基百科等公开资料。",
+        tavily_api_key=os.getenv("TAVILY_API_KEY"),
     )
 
 
 def create_news_agent() -> CompiledStateGraph:
     """创建新闻分析Agent"""
     model = _create_model()
+    tavily_tool = _create_tavily_tool()
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     system_prompt = f"""你是一位专业的新闻分析专家，具备深度解读和洞察能力。当前时间：{current_time}
@@ -182,11 +204,49 @@ def create_news_agent() -> CompiledStateGraph:
 ✅ 正确：search_news_tool(title_contains="特斯拉")  # 用户明确要求标题包含
 
 用户："查找2025年1月关于新能源汽车的深度分析"
-✅ 正确：search_news_tool(query="新能源汽车行业分析", start_date_int=20250101, end_date_int=20250131)"""
+✅ 正确：search_news_tool(query="新能源汽车行业分析", start_date_int=20250101, end_date_int=20250131)
+
+【联网搜索工具 web_search】
+当本地新闻库无法满足需求时，可使用 web_search 工具进行互联网搜索：
+- 适用场景：查询最新实时信息、公司官网资料、维基百科、技术文档等
+- 优先使用本地 search_news_tool，仅在需要补充外部信息时使用联网搜索
+- 示例：用户询问某公司的官网介绍、某技术的维基百科定义等
+
+【并行工具调用】
+你可以同时调用多个工具以提高效率，适用场景：
+- 多主题对比分析：并行搜索不同关键词（如对比两家公司动态）
+- 本地+联网互补：同时调用 search_news_tool 和 web_search 获取更全面信息
+- 多维度查询：按不同日期范围、不同角度并行搜索
+
+示例：用户问"对比特斯拉和比亚迪的最新动态"
+→ 并行调用：
+  - search_news_tool(query="特斯拉 销量 产能 新车型")
+  - search_news_tool(query="比亚迪 销量 出口 新能源")
+
+【输出格式规范】
+提供分析报告时，必须在末尾列出参考来源，增强可信度：
+
+格式示例：
+```
+（正文分析内容）
+根据报道，特斯拉在华销量环比增长15%[1]，而比亚迪同期出口量创新高[2]...
+
+---
+**参考来源：**
+[1] 《特斯拉中国1月销量数据公布》- 2025-01-18
+[2] 《比亚迪出口再创纪录》- 2025-01-17
+[3] Tesla官网投资者关系页面 - ir.tesla.com (联网)
+```
+
+规则：
+- 正文中使用 [1][2][3] 标注引用
+- 末尾按引用顺序列出来源：标题、日期、来源类型
+- 区分本地新闻库和联网搜索的来源
+- 引用应指向具体支撑观点的新闻，而非泛泛列举"""
 
     return create_agent(
         model=model,
-        tools=[search_news_tool],
+        tools=[search_news_tool, tavily_tool],
         system_prompt=system_prompt,
     )
 
