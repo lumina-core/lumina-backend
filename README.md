@@ -43,6 +43,53 @@ uv run uvicorn main:app --reload
 
 Visit http://localhost:8000/docs for interactive API documentation.
 
+## Linux 后台运行
+
+### 方式一：nohup（简单快捷）
+
+```bash
+# 后台启动（日志输出到 nohup.out）
+nohup uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 > logs/app.log 2>&1 &
+
+# 查看进程
+ps aux | grep uvicorn
+
+# 停止服务
+pkill -f "uvicorn app.main:app"
+```
+
+### 方式二：systemd（推荐生产环境）
+
+创建服务文件 `/etc/systemd/system/lumina.service`：
+
+```ini
+[Unit]
+Description=Lumina Backend Service
+After=network.target
+
+[Service]
+Type=simple
+User=your_user
+WorkingDirectory=/path/to/lumina-backend
+ExecStart=/path/to/uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# 启用并启动服务
+sudo systemctl daemon-reload
+sudo systemctl enable lumina
+sudo systemctl start lumina
+
+# 查看状态/日志
+sudo systemctl status lumina
+sudo journalctl -u lumina -f
+```
+
 ## API Endpoints
 
 See [DATABASE.md](DATABASE.md) for detailed API documentation.
