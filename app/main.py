@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlmodel import SQLModel
 
-from app.api.routes import users, products, tasks, news, chat, credits
+from app.api.routes import users, products, tasks, news, chat, credits, auth
 from app.core.config import settings
 from app.core.database import engine, ensure_database_exists
 from app.core.scheduler import scheduler_manager
@@ -39,6 +39,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.app_name, version=settings.version, lifespan=lifespan)
 
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
 app.include_router(products.router, prefix="/api/v1/products", tags=["products"])
 app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
