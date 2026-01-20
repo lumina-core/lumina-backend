@@ -5,6 +5,7 @@ from typing import Optional
 from fastapi import Depends, Header, HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_session
 from app.models.auth import User
 from app.services.auth_service import decode_token, get_user_by_id
@@ -60,5 +61,27 @@ async def get_current_user_optional(
     user = await get_user_by_id(session, user_id)
     if not user or not user.is_active:
         return None
+
+    return user
+
+
+async def get_admin_user(
+    user: User = Depends(get_current_user),
+) -> User:
+    """
+    获取管理员用户（必须是管理员）
+
+    用法:
+        @router.get("/admin/xxx")
+        async def admin_route(user: User = Depends(get_admin_user)):
+            ...
+    """
+    admin_emails = [e.strip() for e in settings.admin_emails.split(",") if e.strip()]
+
+    if not admin_emails:
+        raise HTTPException(status_code=403, detail="管理员功能未配置")
+
+    if user.email not in admin_emails:
+        raise HTTPException(status_code=403, detail="无管理员权限")
 
     return user

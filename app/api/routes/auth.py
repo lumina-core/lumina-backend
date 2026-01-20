@@ -2,18 +2,21 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
+from pydantic import BaseModel, Field
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_session
+from app.core.deps import get_current_user
 from app.models.auth import (
     LoginRequest,
     RegisterRequest,
     SendCodeRequest,
     SendCodeResponse,
     TokenResponse,
+    User,
     UserInfo,
     RefreshTokenRequest,
 )
@@ -24,15 +27,40 @@ from app.services.auth_service import (
     decode_token,
     get_user_by_email,
     get_user_by_id,
+    hash_password,
     process_invite_reward,
     user_to_info,
     validate_invite_code,
     verify_email_code,
     verify_password,
 )
+from app.services.credit_service import get_invite_code
 from app.services.email_service import send_verification_email
 
 router = APIRouter()
+
+
+class UpdateUserRequest(BaseModel):
+    """修改用户信息请求"""
+
+    name: Optional[str] = Field(None, max_length=100)
+
+
+class ChangePasswordRequest(BaseModel):
+    """修改密码请求"""
+
+    old_password: str = Field(min_length=6)
+    new_password: str = Field(min_length=6, max_length=100)
+
+
+class UserCreditsResponse(BaseModel):
+    """用户积分响应"""
+
+    user_id: int
+    email: str
+    invite_code: Optional[str]
+    credits: int
+    is_active: bool
 
 
 @router.post("/send-code", response_model=SendCodeResponse)
@@ -167,29 +195,84 @@ async def refresh_token(
 
 
 @router.get("/me", response_model=UserInfo)
-async def get_current_user(
-    authorization: Optional[str] = Header(None),
-    session: AsyncSession = Depends(get_session),
+async def get_me(
+    user: User = Depends(get_current_user),
 ):
     """
     获取当前用户信息
 
     Header: Authorization: Bearer <token>
     """
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="未登录")
+    return user_to_info(user)
 
-    token = authorization[7:]
-    payload = decode_token(token)
-    if not payload or payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="Token无效或已过期")
 
-    user_id = int(payload.get("sub"))
-    user = await get_user_by_id(session, user_id)
-    if not user:
-        raise HTTPException(status_code=401, detail="用户不存在")
+@router.put("/me", response_model=UserInfo)
+async def update_me(
+    request: UpdateUserRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    修改当前用户信息
+    """
+    if request.name is not None:
+        user.name = request.name
 
-    if not user.is_active:
-        raise HTTPException(status_code=403, detail="账号已被禁用")
+    from datetime import datetime
+
+    user.updated_at = datetime.utcnow()
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
 
     return user_to_info(user)
+
+
+@router.post("/change-password")
+async def change_password(
+    request: ChangePasswordRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    修改密码
+    """
+    if not verify_password(request.old_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="原密码错误")
+
+    user.password_hash = hash_password(request.new_password)
+
+    from datetime import datetime
+
+    user.updated_at = datetime.utcnow()
+    session.add(user)
+    await session.commit()
+
+    logger.info(f"用户修改密码: {user.email}")
+    return {"message": "密码修改成功"}
+
+
+@router.get("/me/credits", response_model=UserCreditsResponse)
+async def get_my_credits(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    获取当前用户积分余额
+    """
+    credits = 0
+    is_active = False
+
+    if user.invited_by_code:
+        invite = await get_invite_code(session, user.invited_by_code)
+        if invite:
+            credits = invite.credits
+            is_active = invite.is_active
+
+    return UserCreditsResponse(
+        user_id=user.id,
+        email=user.email,
+        invite_code=user.invited_by_code,
+        credits=credits,
+        is_active=is_active,
+    )

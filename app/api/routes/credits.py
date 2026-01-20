@@ -3,12 +3,13 @@
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.database import get_session
+from app.core.deps import get_admin_user, get_current_user
 from app.models.auth import User
 from app.models.credit import (
     CreditBalance,
@@ -66,18 +67,18 @@ class InviteCodeUsageResponse(BaseModel):
 
 @router.get("/balance", response_model=CreditBalance)
 async def get_balance(
-    x_invite_code: Optional[str] = Header(None, alias="X-Invite-Code"),
+    user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     """
-    查询积分余额
+    查询当前用户积分余额
 
-    Header: X-Invite-Code - 邀请码
+    Header: Authorization: Bearer <token>
     """
-    if not x_invite_code:
-        raise HTTPException(status_code=400, detail="缺少邀请码")
+    if not user.invited_by_code:
+        raise HTTPException(status_code=400, detail="用户未关联邀请码")
 
-    invite = await get_invite_code(session, x_invite_code)
+    invite = await get_invite_code(session, user.invited_by_code)
     if not invite:
         raise HTTPException(status_code=404, detail="邀请码不存在")
 
@@ -91,12 +92,13 @@ async def get_balance(
 @router.post("/admin/invite-codes", response_model=InviteCodeRead)
 async def create_invite(
     request: InviteCodeCreate,
+    _: User = Depends(get_admin_user),
     session: AsyncSession = Depends(get_session),
 ):
     """
     创建邀请码（管理接口）
 
-    生产环境应添加管理员认证
+    需要管理员权限
     """
     invite = await create_invite_code(
         session,
@@ -116,10 +118,11 @@ async def list_invite_codes(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     is_active: Optional[bool] = None,
+    _: User = Depends(get_admin_user),
     session: AsyncSession = Depends(get_session),
 ):
     """
-    获取所有邀请码列表（管理接口）
+    获取所有邀请码列表（管理接口，需要管理员权限）
     """
     query = select(InviteCode)
     if is_active is not None:
@@ -174,10 +177,11 @@ async def list_invite_codes(
 @router.get("/admin/invite-codes/{code}", response_model=InviteCodeUsageResponse)
 async def get_invite_code_usage(
     code: str,
+    _: User = Depends(get_admin_user),
     session: AsyncSession = Depends(get_session),
 ):
     """
-    获取单个邀请码的详细使用情况（管理接口）
+    获取单个邀请码的详细使用情况（管理接口，需要管理员权限）
     """
     invite = await get_invite_code(session, code)
     if not invite:
@@ -248,10 +252,11 @@ async def update_invite_code(
     code: str,
     is_active: Optional[bool] = None,
     add_credits: Optional[int] = None,
+    _: User = Depends(get_admin_user),
     session: AsyncSession = Depends(get_session),
 ):
     """
-    更新邀请码（启用/禁用、充值积分）
+    更新邀请码（启用/禁用、充值积分，需要管理员权限）
     """
     invite = await get_invite_code(session, code)
     if not invite:

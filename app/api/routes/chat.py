@@ -4,13 +4,15 @@ import json
 import os
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.agents.news_agent import stream_agent_response
 from app.core.database import get_session
+from app.core.deps import get_current_user
+from app.models.auth import User
 from app.services.credit_service import deduct_credits, validate_invite_code
 
 router = APIRouter()
@@ -58,31 +60,29 @@ async def _sse_generator(
         yield f"data: {data}\n\n"
 
 
-async def _validate_code(
-    x_invite_code: Optional[str], session: AsyncSession
-) -> Optional[str]:
-    """验证邀请码，返回有效的邀请码或 None"""
-    if not x_invite_code:
-        return None
+async def _validate_user_credits(user: User, session: AsyncSession) -> str:
+    """验证用户的邀请码积分，返回有效的邀请码"""
+    if not user.invited_by_code:
+        raise HTTPException(status_code=403, detail="用户未关联邀请码")
 
-    is_valid, error = await validate_invite_code(session, x_invite_code)
+    is_valid, error = await validate_invite_code(session, user.invited_by_code)
     if not is_valid:
         raise HTTPException(status_code=403, detail=error)
 
-    return x_invite_code
+    return user.invited_by_code
 
 
 @router.get("/stream")
 async def chat_stream_get(
     query: str = Query(..., description="用户查询"),
-    x_invite_code: Optional[str] = Header(None, alias="X-Invite-Code"),
+    user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     """
     GET方式流式聊天接口
 
     使用 Server-Sent Events (SSE) 流式返回响应
-    Header: X-Invite-Code - 邀请码（必填）
+    Header: Authorization: Bearer <token> - 用户登录Token（必填）
 
     事件类型:
     - token: 模型输出的文本片段
@@ -92,7 +92,7 @@ async def chat_stream_get(
     - done: 响应完成
     - error: 发生错误
     """
-    invite_code = await _validate_code(x_invite_code, session)
+    invite_code = await _validate_user_credits(user, session)
 
     return StreamingResponse(
         _sse_generator(query, None, invite_code, session),
@@ -108,16 +108,16 @@ async def chat_stream_get(
 @router.post("/stream")
 async def chat_stream_post(
     request: ChatRequest,
-    x_invite_code: Optional[str] = Header(None, alias="X-Invite-Code"),
+    user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     """
     POST方式流式聊天接口
 
     支持传入聊天历史记录
-    Header: X-Invite-Code - 邀请码（必填）
+    Header: Authorization: Bearer <token> - 用户登录Token（必填）
     """
-    invite_code = await _validate_code(x_invite_code, session)
+    invite_code = await _validate_user_credits(user, session)
 
     return StreamingResponse(
         _sse_generator(request.query, request.chat_history, invite_code, session),
@@ -133,18 +133,18 @@ async def chat_stream_post(
 @router.post("")
 async def chat(
     request: ChatRequest,
-    x_invite_code: Optional[str] = Header(None, alias="X-Invite-Code"),
+    user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     """
     非流式聊天接口
 
     返回完整响应
-    Header: X-Invite-Code - 邀请码（必填）
+    Header: Authorization: Bearer <token> - 用户登录Token（必填）
     """
     from app.agents.news_agent import invoke_agent
 
-    invite_code = await _validate_code(x_invite_code, session)
+    invite_code = await _validate_user_credits(user, session)
 
     result = await invoke_agent(request.query, request.chat_history)
     messages = result.get("messages", [])
