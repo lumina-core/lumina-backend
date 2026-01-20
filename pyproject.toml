@@ -18,6 +18,7 @@ dependencies = [
     "langchain>=1.2.0",
     "langchain-chroma>=1.1.0",
     "langchain-community>=0.4.1",
+    "langchain-mcp-adapters>=0.2.1",
     "langchain-ollama>=1.0.1",
     "langchain-openai>=1.1.6",
     "langgraph-cli[inmem]>=0.4.11",
@@ -28,5 +29,6 @@ dependencies = [
     "python-jose>=3.5.0",
     "selectolax>=0.4.6",
     "sqlmodel>=0.0.30",
+    "tavily-python>=0.7.19",
     "uvicorn>=0.40.0",
 ]
