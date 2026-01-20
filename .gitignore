@@ -221,6 +221,10 @@ data/
 # Temp files
 tmp/
 
+# Log files (keep .gitkeep)
+logs/*
+!logs/.gitkeep
+
 # Compressed archives
 *.tar.gz
 *.tar.zst
