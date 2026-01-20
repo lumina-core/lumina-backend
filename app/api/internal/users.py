@@ -1,22 +1,18 @@
-"""用户管理路由（管理员用）"""
+"""用户管理 - 内部接口"""
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.database import get_session
-from app.core.deps import get_admin_user
 from app.models.auth import User, UserInfo
 
 router = APIRouter()
 
 
 @router.get("", response_model=list[UserInfo])
-async def list_users(
-    _: User = Depends(get_admin_user),
-    session: AsyncSession = Depends(get_session),
-):
-    """获取所有用户列表（管理接口，需要管理员权限）"""
+async def list_users(session: AsyncSession = Depends(get_session)):
+    """获取所有用户列表"""
     result = await session.exec(select(User))
     users = result.all()
     return [
@@ -32,12 +28,8 @@ async def list_users(
 
 
 @router.get("/{user_id}", response_model=UserInfo)
-async def get_user(
-    user_id: int,
-    _: User = Depends(get_admin_user),
-    session: AsyncSession = Depends(get_session),
-):
-    """获取单个用户信息（需要管理员权限）"""
+async def get_user(user_id: int, session: AsyncSession = Depends(get_session)):
+    """获取单个用户信息"""
     result = await session.exec(select(User).where(User.id == user_id))
     user = result.one_or_none()
     if not user:
@@ -52,12 +44,8 @@ async def get_user(
 
 
 @router.delete("/{user_id}")
-async def delete_user(
-    user_id: int,
-    _: User = Depends(get_admin_user),
-    session: AsyncSession = Depends(get_session),
-):
-    """删除用户（管理接口，需要管理员权限）"""
+async def delete_user(user_id: int, session: AsyncSession = Depends(get_session)):
+    """删除用户"""
     result = await session.exec(select(User).where(User.id == user_id))
     user = result.one_or_none()
     if not user:

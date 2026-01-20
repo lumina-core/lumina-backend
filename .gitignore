@@ -229,3 +229,6 @@ logs/*
 *.tar.gz
 *.tar.zst
 *.zip
+
+# Project docs (design docs, not for version control)
+docs/

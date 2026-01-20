@@ -32,8 +32,5 @@ class Settings(BaseSettings):
     invite_reward_inviter: int = 500  # 邀请人奖励积分
     invite_reward_invitee: int = 200  # 被邀请人奖励积分
 
-    # 管理员配置
-    admin_emails: str = ""  # 管理员邮箱列表，逗号分隔
-
 
 settings = Settings()
