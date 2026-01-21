@@ -42,6 +42,7 @@ async def create_tables():
         from app.models.auth import EmailVerification, InviteRelation, User  # noqa: F401
         from app.models.news import NewsArticle  # noqa: F401
         from app.models.chat import ChatSession, ChatMessage  # noqa: F401
+        from app.models.example import ExampleSubmission  # noqa: F401
 
         async with engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
@@ -60,6 +61,7 @@ async def auto_migrate_columns():
         ("chat_sessions", "is_featured", "BOOLEAN DEFAULT 0"),
         ("chat_sessions", "featured_category", "VARCHAR(50) DEFAULT NULL"),
         ("chat_sessions", "featured_order", "INTEGER DEFAULT 0"),
+        ("chat_sessions", "featured_contributor", "VARCHAR(50) DEFAULT NULL"),
     ]
 
     async with engine.begin() as conn:
@@ -74,8 +76,13 @@ async def auto_migrate_columns():
             if column not in existing_columns:
                 try:
                     await conn.run_sync(
-                        lambda sync_conn, t=table, c=column, d=definition: sync_conn.execute(
-                            __import__("sqlalchemy").text(f"ALTER TABLE {t} ADD COLUMN {c} {d}")
+                        lambda sync_conn,
+                        t=table,
+                        c=column,
+                        d=definition: sync_conn.execute(
+                            __import__("sqlalchemy").text(
+                                f"ALTER TABLE {t} ADD COLUMN {c} {d}"
+                            )
                         )
                     )
                     logger.info(f"✓ 自动添加列: {table}.{column}")

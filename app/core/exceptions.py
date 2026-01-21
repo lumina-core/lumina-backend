@@ -41,7 +41,9 @@ class BadRequestException(AppException):
 class UnauthorizedException(AppException):
     """401 未授权"""
 
-    def __init__(self, message: str = "未登录或Token已过期", detail: Optional[Any] = None):
+    def __init__(
+        self, message: str = "未登录或Token已过期", detail: Optional[Any] = None
+    ):
         super().__init__(code=401, message=message, detail=detail)
 
 
@@ -69,7 +71,9 @@ class ConflictException(AppException):
 class TooManyRequestsException(AppException):
     """429 请求过于频繁"""
 
-    def __init__(self, message: str = "请求过于频繁，请稍后再试", detail: Optional[Any] = None):
+    def __init__(
+        self, message: str = "请求过于频繁，请稍后再试", detail: Optional[Any] = None
+    ):
         super().__init__(code=429, message=message, detail=detail)
 
 
@@ -84,7 +88,9 @@ def register_exception_handlers(app: FastAPI) -> None:
     """注册全局异常处理器"""
 
     @app.exception_handler(AppException)
-    async def app_exception_handler(request: Request, exc: AppException) -> JSONResponse:
+    async def app_exception_handler(
+        request: Request, exc: AppException
+    ) -> JSONResponse:
         """处理应用自定义异常"""
         logger.warning(
             f"AppException: {exc.message} | path={request.url.path} | detail={exc.detail}"
@@ -97,7 +103,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(Exception)
-    async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    async def global_exception_handler(
+        request: Request, exc: Exception
+    ) -> JSONResponse:
         """处理未捕获的异常"""
         logger.exception(f"Unhandled exception: {exc} | path={request.url.path}")
         return JSONResponse(

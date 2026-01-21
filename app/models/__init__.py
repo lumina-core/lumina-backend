@@ -2,6 +2,7 @@ from app.models.auth import User, UserInfo, EmailVerification, InviteRelation
 from app.models.credit import InviteCode, CreditUsageLog, UserCredit, UserCreditLog
 from app.models.news import NewsArticle
 from app.models.chat import ChatSession, ChatMessage
+from app.models.example import ExampleSubmission
 
 __all__ = [
     "User",
@@ -15,4 +16,5 @@ __all__ = [
     "NewsArticle",
     "ChatSession",
     "ChatMessage",
+    "ExampleSubmission",
 ]

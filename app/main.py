@@ -2,33 +2,29 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from loguru import logger
-from sqlmodel import SQLModel
 
 from app.api.routes import tasks, news, chat, credits, auth, history, examples
 from app.api.internal import invite_codes as internal_invite_codes
 from app.api.internal import users as internal_users
 from app.core.config import settings
-from app.core.database import engine, ensure_database_exists
+from app.core.database import engine, init_database
 from app.core.exceptions import register_exception_handlers
 from app.core.middleware import register_middlewares
 from app.core.scheduler import scheduler_manager
-from app.tasks import register_news_tasks
+from app.tasks import register_news_tasks, register_example_tasks
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting application initialization...")
 
-    await ensure_database_exists()
-
-    logger.info("Creating database tables...")
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
-    logger.info("All tables created successfully")
+    # 初始化数据库（创建表 + 自动迁移列）
+    await init_database()
 
     # 启动定时任务调度器
     logger.info("Initializing task scheduler...")
     register_news_tasks()
+    register_example_tasks()
     scheduler_manager.start()
     scheduler_manager.print_jobs()
     logger.info("Task scheduler started successfully")
@@ -85,6 +81,8 @@ async def root():
     return {"message": "Welcome to Lumina Backend API", "version": settings.version}
 
 
-@app.get("/health", summary="健康检查", description="用于负载均衡器和监控的健康检查端点")
+@app.get(
+    "/health", summary="健康检查", description="用于负载均衡器和监控的健康检查端点"
+)
 async def health():
     return {"status": "healthy"}

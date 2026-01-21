@@ -34,9 +34,16 @@ class ChatSession(SQLModel, table=True):
     # 精选示例相关字段
     is_featured: bool = Field(default=False, index=True, description="是否为精选示例")
     featured_category: Optional[str] = Field(
-        default=None, max_length=50, description="精选分类：投资视角/行业研究/企业决策/政策解读"
+        default=None,
+        max_length=50,
+        description="精选分类：投资视角/行业研究/企业决策/政策解读/民生热点/科技创新",
     )
     featured_order: int = Field(default=0, description="精选排序")
+    featured_contributor: Optional[str] = Field(
+        default=None,
+        max_length=50,
+        description="精选示例贡献者名称",
+    )
 
     # LangGraph thread_id，用于关联 checkpointer
     thread_id: Optional[str] = Field(
@@ -133,6 +140,7 @@ class FeaturedExampleRead(BaseModel):
     category: Optional[str]
     share_token: str
     message_count: int
+    contributor: Optional[str] = None
     created_at: datetime
 
 

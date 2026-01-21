@@ -24,13 +24,6 @@ from app.services.chat_service import ChatService
 router = APIRouter()
 
 
-def _build_share_url(share_token: str) -> str:
-    """构建分享 URL"""
-    # 可以从环境变量配置前端 URL
-    frontend_url = "https://lumina.example.com"  # TODO: 从配置读取
-    return f"{frontend_url}/share/{share_token}"
-
-
 def _to_session_read(s, include_share: bool = False) -> ChatSessionRead:
     """转换会话模型为响应"""
     return ChatSessionRead(
@@ -41,9 +34,7 @@ def _to_session_read(s, include_share: bool = False) -> ChatSessionRead:
         starred=s.starred,
         is_public=s.is_public,
         share_token=s.share_token if include_share and s.is_public else None,
-        share_url=_build_share_url(s.share_token)
-        if include_share and s.is_public and s.share_token
-        else None,
+        share_url=None,  # 前端自行拼接
         created_at=s.created_at,
         updated_at=s.updated_at,
     )
@@ -186,11 +177,10 @@ async def share_session(
     if not chat_session:
         raise HTTPException(status_code=404, detail="会话不存在")
 
-    share_url = _build_share_url(chat_session.share_token)
     return ShareSessionResponse(
         success=True,
         share_token=chat_session.share_token,
-        share_url=share_url,
+        share_url="",  # 前端自行拼接
         message="分享链接已生成",
     )
 
