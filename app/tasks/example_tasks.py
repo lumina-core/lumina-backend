@@ -44,12 +44,12 @@ def register_example_tasks():
     scheduler.add_job(
         process_example_review_queue,
         trigger="interval",
-        minutes=10,
+        minutes=1,
         id="process_example_review_queue",
         name="示例审核队列处理",
         replace_existing=True,
     )
-    logger.info("✓ 已注册任务：示例审核队列处理（每10分钟）")
+    logger.info("✓ 已注册任务：示例审核队列处理（每1分钟）")
 
     logger.info("=" * 60)
     logger.info("🎯 示例审核定时任务注册完成")

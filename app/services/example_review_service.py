@@ -18,7 +18,7 @@ class ExampleReviewResult(BaseModel):
     """LLM 审核结果的结构化输出"""
 
     approved: bool = Field(description="是否通过审核")
-    score: float = Field(ge=0, le=10, description="质量评分 0-10")
+    score: float = Field(description="质量评分，范围 0-10 分")
     category: Literal[
         "投资视角", "行业研究", "企业决策", "政策解读", "民生热点", "科技创新", "其他"
     ] = Field(description="内容分类")
@@ -161,15 +161,17 @@ class ExampleReviewService:
             return result
         except Exception as e:
             logger.error(f"LLM 审核失败: {e}")
-            return ExampleReviewResult(
-                approved=False,
-                score=0,
-                category="其他",
-                reason=f"审核服务异常: {str(e)}",
-            )
+            # 抛出异常让上层处理，而不是返回假的拒绝结果
+            raise
 
-    async def process_submission(self, submission: ExampleSubmission) -> bool:
-        """处理单个提交"""
+    async def process_submission(
+        self, submission: ExampleSubmission
+    ) -> tuple[bool, bool]:
+        """处理单个提交
+
+        Returns:
+            tuple[bool, bool]: (是否成功处理, 是否通过审核)
+        """
         submission.status = "reviewing"
         await self.session.commit()
 
@@ -183,9 +185,16 @@ class ExampleReviewService:
             submission.llm_score = 0
             submission.reviewed_at = datetime.now(UTC)
             await self.session.commit()
-            return False
+            return True, False
 
-        result = await self.review_example(chat_session.title, messages)
+        try:
+            result = await self.review_example(chat_session.title, messages)
+        except Exception as e:
+            # LLM 调用失败，重置为 pending 等待重试
+            submission.status = "pending"
+            await self.session.commit()
+            logger.warning(f"LLM 审核异常，稍后重试: {submission.id} - {e}")
+            return False, False
 
         submission.llm_score = result.score
         submission.llm_category = result.category
@@ -211,7 +220,7 @@ class ExampleReviewService:
             logger.info(f"✗ 示例审核拒绝: {chat_session.title} | 原因: {result.reason}")
 
         await self.session.commit()
-        return result.approved
+        return True, result.approved
 
     async def process_queue(self, limit: int = 5) -> dict:
         """处理审核队列"""
@@ -225,17 +234,14 @@ class ExampleReviewService:
         logger.info(f"开始处理 {len(submissions)} 个待审核示例")
 
         for submission in submissions:
-            try:
-                approved = await self.process_submission(submission)
+            success, approved = await self.process_submission(submission)
+            if success:
                 stats["processed"] += 1
                 if approved:
                     stats["approved"] += 1
                 else:
                     stats["rejected"] += 1
-            except Exception as e:
-                logger.error(f"处理提交 {submission.id} 失败: {e}")
-                submission.status = "pending"  # 重置状态以便重试
-                await self.session.commit()
+            else:
                 stats["errors"] += 1
 
         logger.info(
