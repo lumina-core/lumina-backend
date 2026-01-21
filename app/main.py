@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlmodel import SQLModel
 
-from app.api.routes import tasks, news, chat, credits, auth
+from app.api.routes import tasks, news, chat, credits, auth, history
 from app.api.internal import invite_codes as internal_invite_codes
 from app.api.internal import users as internal_users
 from app.core.config import settings
@@ -46,6 +46,7 @@ app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(news.router, prefix="/api/v1/news", tags=["news"])
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"])
 app.include_router(credits.router, prefix="/api/v1/credits", tags=["credits"])
+app.include_router(history.router, prefix="/api/v1/history", tags=["history"])
 
 # 内部接口 - 不走 JWT，通过部署层面保护（如 nginx IP 白名单）
 app.include_router(

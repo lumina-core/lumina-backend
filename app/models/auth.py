@@ -72,7 +72,7 @@ class SendCodeRequest(SQLModel):
     """发送验证码请求"""
 
     email: EmailStr
-    invite_code: str = Field(min_length=1, description="邀请码")
+    invite_code: Optional[str] = Field(default=None, description="邀请码（可选）")
 
 
 class SendCodeResponse(SQLModel):
@@ -89,7 +89,9 @@ class RegisterRequest(SQLModel):
     code: str = Field(min_length=6, max_length=6, description="邮箱验证码")
     password: str = Field(min_length=6, max_length=100, description="密码")
     name: Optional[str] = Field(default=None, max_length=100)
-    invite_code: str = Field(min_length=1, description="邀请码")
+    invite_code: Optional[str] = Field(
+        default=None, description="邀请码（可选，有邀请码可获得额外积分）"
+    )
 
 
 class LoginRequest(SQLModel):

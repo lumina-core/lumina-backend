@@ -214,7 +214,9 @@ def search_news(
             break
         except ValueError as e:
             if "No embedding data received" in str(e):
-                logger.warning(f"Embedding API 返回空数据，第 {attempt + 1}/{max_retries} 次尝试")
+                logger.warning(
+                    f"Embedding API 返回空数据，第 {attempt + 1}/{max_retries} 次尝试"
+                )
                 if attempt < max_retries - 1:
                     time.sleep(0.5 * (attempt + 1))
                 else:

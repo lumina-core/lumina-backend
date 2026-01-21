@@ -34,8 +34,13 @@ from app.services.auth_service import (
     verify_email_code,
     verify_password,
 )
-from app.services.credit_service import get_invite_code
 from app.services.email_service import send_verification_email
+from app.services.user_credit_service import (
+    get_or_create_user_credit,
+    get_user_credit_info,
+    daily_checkin,
+)
+from app.models.credit import UserCreditResponse, CheckinResponse
 
 router = APIRouter()
 
@@ -71,11 +76,13 @@ async def send_code(
     """
     发送邮箱验证码
 
-    需要先验证邀请码是否有效
+    邀请码可选，如果提供则验证其有效性
     """
-    invite = await validate_invite_code(session, request.invite_code)
-    if not invite:
-        raise HTTPException(status_code=400, detail="邀请码无效或已停用")
+    # 如果提供了邀请码，验证其有效性
+    if request.invite_code:
+        invite = await validate_invite_code(session, request.invite_code)
+        if not invite:
+            raise HTTPException(status_code=400, detail="邀请码无效或已停用")
 
     existing_user = await get_user_by_email(session, request.email)
     if existing_user:
@@ -101,11 +108,14 @@ async def register(
     """
     用户注册
 
-    需要邮箱验证码和有效邀请码
+    邀请码可选，有邀请码可获得额外积分奖励
     """
-    invite = await validate_invite_code(session, request.invite_code)
-    if not invite:
-        raise HTTPException(status_code=400, detail="邀请码无效或已停用")
+    # 如果提供了邀请码，验证其有效性
+    invite = None
+    if request.invite_code:
+        invite = await validate_invite_code(session, request.invite_code)
+        if not invite:
+            raise HTTPException(status_code=400, detail="邀请码无效或已停用")
 
     existing_user = await get_user_by_email(session, request.email)
     if existing_user:
@@ -123,11 +133,16 @@ async def register(
         name=request.name,
     )
 
-    await process_invite_reward(session, user, request.invite_code)
+    # 创建用户积分账户（会自动赠送注册积分）
+    await get_or_create_user_credit(session, user.id)
+
+    # 如果有邀请码，处理邀请奖励
+    if invite and request.invite_code:
+        await process_invite_reward(session, user, request.invite_code)
 
     access_token = create_access_token(user.id)
 
-    logger.info(f"新用户注册: {user.email}, 邀请码: {request.invite_code}")
+    logger.info(f"新用户注册: {user.email}, 邀请码: {request.invite_code or '无'}")
 
     return TokenResponse(
         access_token=access_token,
@@ -249,30 +264,36 @@ async def change_password(
     await session.commit()
 
     logger.info(f"用户修改密码: {user.email}")
-    return {"message": "密码修改成功"}
+    return {"success": True, "message": "密码修改成功"}
 
 
-@router.get("/me/credits", response_model=UserCreditsResponse)
+@router.get("/me/credits", response_model=UserCreditResponse)
 async def get_my_credits(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     """
-    获取当前用户积分余额
+    获取当前用户积分余额和使用情况
     """
-    credits = 0
-    is_active = False
+    credit_info = await get_user_credit_info(session, user.id)
+    return UserCreditResponse(**credit_info)
 
-    if user.invited_by_code:
-        invite = await get_invite_code(session, user.invited_by_code)
-        if invite:
-            credits = invite.credits
-            is_active = invite.is_active
 
-    return UserCreditsResponse(
-        user_id=user.id,
-        email=user.email,
-        invite_code=user.invited_by_code,
-        credits=credits,
-        is_active=is_active,
+@router.post("/me/checkin", response_model=CheckinResponse)
+async def checkin(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    每日签到，获取积分
+    """
+    success, message, credits_earned, current_credits = await daily_checkin(
+        session, user.id
+    )
+    return CheckinResponse(
+        success=success,
+        message=message,
+        credits_earned=credits_earned,
+        current_credits=current_credits,
+        streak_days=1,  # 暂时固定为1，后续可以实现连续签到
     )

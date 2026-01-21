@@ -1,4 +1,4 @@
-"""新闻分析Agent - 支持流式输出"""
+"""新闻分析Agent - 支持流式输出和会话持久化"""
 
 import os
 from datetime import datetime
@@ -10,13 +10,16 @@ from langchain.agents import create_agent
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph.state import CompiledStateGraph
 
 from app.agents.rag.news_rag import list_news, search_news
+from app.core.memory import get_checkpointer
 
 load_dotenv()
 
 _agent: Optional[CompiledStateGraph] = None
+_checkpointer: Optional[AsyncSqliteSaver] = None
 
 MAX_DISPLAY_COUNT = 20
 
@@ -148,13 +151,23 @@ def _create_tavily_tool() -> TavilySearchResults:
     )
 
 
-def create_news_agent() -> CompiledStateGraph:
-    """创建新闻分析Agent"""
-    model = _create_model()
-    tavily_tool = _create_tavily_tool()
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+def _get_system_prompt(current_time: str) -> str:
+    """生成系统提示词"""
+    # 解析当前时间以获取年份
+    current_year = current_time.split("-")[0]
+    return f"""你是一位专业的新闻联播分析专家，专注于挖掘央视新闻联播数据的深层价值。
 
-    system_prompt = f"""你是一位专业的新闻联播分析专家，专注于挖掘央视新闻联播数据的深层价值。当前时间：{current_time}
+【⚠️ 关键时间信息 - 请牢记】
+**当前时间：{current_time}**
+**当前年份：{current_year}年**
+
+时间认知要求：
+- 你必须始终以 {current_year} 年为基准进行思考和回答
+- "今年"指的是 {current_year} 年，"去年"指的是 {int(current_year) - 1} 年
+- "最近"、"近期"的新闻应优先搜索 {current_year} 年的数据
+- 在搜索和分析时，确保日期参数与用户询问的时间范围一致
+- 回答中提及日期时，确认年份是否正确，避免错误引用过去年份的信息
+- 如果用户没有指定时间范围，默认查询最近的新闻（{current_year}年）
 
 【核心定位】
 你的主要数据来源是**新闻联播**，这是中国最权威的官方新闻发布平台。你的价值在于：
@@ -270,6 +283,14 @@ def create_news_agent() -> CompiledStateGraph:
 - **政策关联**：与哪些政策/会议/领导讲话相关？
 - **行业影响**：对相关行业/企业/地区有何启示？"""
 
+
+def create_news_agent() -> CompiledStateGraph:
+    """创建新闻分析Agent（无持久化）"""
+    model = _create_model()
+    tavily_tool = _create_tavily_tool()
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    system_prompt = _get_system_prompt(current_time)
+
     return create_agent(
         model=model,
         tools=[search_news_tool, tavily_tool],
@@ -278,18 +299,47 @@ def create_news_agent() -> CompiledStateGraph:
 
 
 def get_news_agent() -> CompiledStateGraph:
-    """获取单例Agent实例"""
+    """获取单例Agent实例（无持久化）"""
     global _agent
     if _agent is None:
         _agent = create_news_agent()
     return _agent
 
 
+async def get_news_agent_with_memory() -> CompiledStateGraph:
+    """获取带 memory 持久化的 Agent 实例"""
+    global _checkpointer
+
+    if _checkpointer is None:
+        _checkpointer = await get_checkpointer()
+
+    model = _create_model()
+    tavily_tool = _create_tavily_tool()
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 使用与 create_news_agent 相同的 system_prompt
+    system_prompt = _get_system_prompt(current_time)
+
+    return create_agent(
+        model=model,
+        tools=[search_news_tool, tavily_tool],
+        system_prompt=system_prompt,
+        checkpointer=_checkpointer,
+    )
+
+
 async def stream_agent_response(
-    query: str, chat_history: Optional[list] = None
+    query: str,
+    chat_history: Optional[list] = None,
+    thread_id: Optional[str] = None,
 ) -> AsyncGenerator[dict, None]:
     """
     流式生成Agent响应
+
+    Args:
+        query: 用户查询
+        chat_history: 聊天历史（仅在无 thread_id 时使用）
+        thread_id: LangGraph 会话ID，如果提供则使用 checkpointer 自动管理历史
 
     Yields:
         dict: 事件类型和数据
@@ -300,12 +350,18 @@ async def stream_agent_response(
             - {"type": "done"}  # 完成
             - {"type": "error", "message": "..."}  # 错误
     """
-    agent = get_news_agent()
-
-    messages = []
-    if chat_history:
-        messages.extend(chat_history)
-    messages.append({"role": "user", "content": query})
+    # 如果有 thread_id，使用带 memory 的 agent
+    if thread_id:
+        agent = await get_news_agent_with_memory()
+        config = {"configurable": {"thread_id": thread_id}}
+        messages = [{"role": "user", "content": query}]
+    else:
+        agent = get_news_agent()
+        config = {}
+        messages = []
+        if chat_history:
+            messages.extend(chat_history)
+        messages.append({"role": "user", "content": query})
 
     total_input_tokens = 0
     total_output_tokens = 0
@@ -314,6 +370,7 @@ async def stream_agent_response(
         async for event in agent.astream_events(
             {"messages": messages},
             version="v2",
+            config=config,
         ):
             kind = event["event"]
 

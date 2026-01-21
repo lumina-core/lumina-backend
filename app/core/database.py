@@ -40,8 +40,8 @@ async def create_tables():
         logger.info("开始创建数据库表...")
 
         from app.models.auth import EmailVerification, InviteRelation, User  # noqa: F401
-        from app.models.credit import CreditUsageLog, InviteCode  # noqa: F401
         from app.models.news import NewsArticle  # noqa: F401
+        from app.models.chat import ChatSession, ChatMessage  # noqa: F401
 
         async with engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)

@@ -1,10 +1,47 @@
 """积分和邀请码模型"""
 
 import secrets
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional
 
+from pydantic import BaseModel
 from sqlmodel import Field, SQLModel
+
+
+# ============ 用户积分系统 ============
+
+
+class UserCredit(SQLModel, table=True):
+    """用户积分表"""
+
+    __tablename__ = "user_credits"
+
+    user_id: int = Field(primary_key=True, foreign_key="users.id")
+    credits: int = Field(default=0, description="当前积分余额")
+    total_earned: int = Field(default=0, description="累计获得积分")
+    total_used: int = Field(default=0, description="累计使用积分")
+    daily_used: int = Field(default=0, description="今日已使用积分")
+    daily_limit: int = Field(default=100, description="每日使用上限")
+    last_checkin_date: Optional[date] = Field(default=None, description="上次签到日期")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class UserCreditLog(SQLModel, table=True):
+    """用户积分变动记录"""
+
+    __tablename__ = "user_credit_logs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True, foreign_key="users.id")
+    amount: int = Field(description="变动数量，正数增加负数减少")
+    balance: int = Field(description="变动后余额")
+    type: str = Field(max_length=20, description="类型: checkin/invite/usage/bonus")
+    description: Optional[str] = Field(default=None, max_length=200)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ============ 邀请码系统（可选，用于额外奖励）============
 
 
 class InviteCode(SQLModel, table=True):
@@ -57,8 +94,34 @@ class InviteCodeRead(SQLModel):
 
 
 class CreditBalance(SQLModel):
-    """积分余额响应"""
+    """积分余额响应（旧版，兼容邀请码）"""
 
     code: str
     credits: int
     is_active: bool
+
+
+# ============ 新版用户积分响应 ============
+
+
+class UserCreditResponse(BaseModel):
+    """用户积分余额响应"""
+
+    user_id: int
+    credits: int
+    daily_used: int
+    daily_limit: int
+    daily_remaining: int
+    can_use: bool
+    last_checkin_date: Optional[date]
+    checked_in_today: bool
+
+
+class CheckinResponse(BaseModel):
+    """签到响应"""
+
+    success: bool
+    message: str
+    credits_earned: int
+    current_credits: int
+    streak_days: int  # 连续签到天数（预留）
