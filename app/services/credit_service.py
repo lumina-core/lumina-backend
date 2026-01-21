@@ -1,6 +1,6 @@
 """积分服务"""
 
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 
 from sqlmodel import select
@@ -9,10 +9,10 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.models.credit import CreditUsageLog, InviteCode
 
 
-# 积分计算配置: 1积分 = 1000 tokens
+# 积分计算配置: 1积分 = 10000 tokens
 # 输出 token 通常更贵，设置为输入的 3 倍
-INPUT_TOKENS_PER_CREDIT = 1000
-OUTPUT_TOKENS_PER_CREDIT = 333  # 输出更贵
+INPUT_TOKENS_PER_CREDIT = 10000
+OUTPUT_TOKENS_PER_CREDIT = 3330  # 输出更贵
 
 
 def calculate_credits(input_tokens: int, output_tokens: int) -> int:
@@ -75,7 +75,7 @@ async def deduct_credits(
     # 实际扣除不超过余额
     credits_deducted = min(credits_needed, invite.credits)
     invite.credits -= credits_deducted
-    invite.updated_at = datetime.utcnow()
+    invite.updated_at = datetime.now(UTC)
 
     # 记录使用日志
     log = CreditUsageLog(

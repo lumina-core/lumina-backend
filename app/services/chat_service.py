@@ -1,8 +1,9 @@
 """聊天历史服务"""
 
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import List, Optional
 
+from sqlalchemy import func, delete as sa_delete
 from sqlmodel import select, desc
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -54,8 +55,10 @@ class ChatService:
                 | ChatSession.preview.contains(search)
             )
 
-        # 计算总数
-        count_query = select(ChatSession).where(ChatSession.user_id == user_id)
+        # 计算总数（使用 COUNT 聚合，避免加载所有数据）
+        count_query = select(func.count(ChatSession.id)).where(
+            ChatSession.user_id == user_id
+        )
         if starred_only:
             count_query = count_query.where(ChatSession.starred.is_(True))
         if search:
@@ -64,7 +67,7 @@ class ChatService:
                 | ChatSession.preview.contains(search)
             )
         result = await self.session.exec(count_query)
-        total = len(result.all())
+        total = result.one()
 
         # 获取分页数据
         query = query.order_by(desc(ChatSession.updated_at)).offset(offset).limit(limit)
@@ -94,7 +97,7 @@ class ChatService:
         if data.starred is not None:
             chat_session.starred = data.starred
 
-        chat_session.updated_at = datetime.utcnow()
+        chat_session.updated_at = datetime.now(UTC)
         self.session.add(chat_session)
         await self.session.commit()
         await self.session.refresh(chat_session)
@@ -106,11 +109,10 @@ class ChatService:
         if not chat_session:
             return False
 
-        # 删除所有消息
-        messages_query = select(ChatMessage).where(ChatMessage.session_id == session_id)
-        result = await self.session.exec(messages_query)
-        for msg in result.all():
-            await self.session.delete(msg)
+        # 批量删除所有消息（避免 N+1 查询）
+        await self.session.exec(
+            sa_delete(ChatMessage).where(ChatMessage.session_id == session_id)
+        )
 
         # 删除会话
         await self.session.delete(chat_session)
@@ -135,7 +137,7 @@ class ChatService:
 
         # 更新会话统计
         chat_session.message_count += 1
-        chat_session.updated_at = datetime.utcnow()
+        chat_session.updated_at = datetime.now(UTC)
         if data.role == "user" and not chat_session.preview:
             chat_session.preview = data.content[:500]
         self.session.add(chat_session)
@@ -175,7 +177,7 @@ class ChatService:
             chat_session.share_token = ChatSession.generate_share_token()
 
         chat_session.is_public = True
-        chat_session.updated_at = datetime.utcnow()
+        chat_session.updated_at = datetime.now(UTC)
         self.session.add(chat_session)
         await self.session.commit()
         await self.session.refresh(chat_session)
@@ -190,7 +192,7 @@ class ChatService:
             return None
 
         chat_session.is_public = False
-        chat_session.updated_at = datetime.utcnow()
+        chat_session.updated_at = datetime.now(UTC)
         self.session.add(chat_session)
         await self.session.commit()
         await self.session.refresh(chat_session)
@@ -220,3 +222,38 @@ class ChatService:
         )
         result = await self.session.exec(query)
         return chat_session, list(result.all())
+
+    # ============ 精选示例相关方法 ============
+
+    async def get_featured_examples(
+        self, category: Optional[str] = None, limit: int = 20
+    ) -> List[ChatSession]:
+        """获取精选示例列表"""
+        query = select(ChatSession).where(
+            ChatSession.is_featured.is_(True),
+            ChatSession.is_public.is_(True),
+            ChatSession.share_token.isnot(None),
+        )
+
+        if category:
+            query = query.where(ChatSession.featured_category == category)
+
+        query = query.order_by(
+            ChatSession.featured_order, desc(ChatSession.created_at)
+        ).limit(limit)
+
+        result = await self.session.exec(query)
+        return list(result.all())
+
+    async def get_featured_categories(self) -> List[str]:
+        """获取所有精选分类"""
+        query = (
+            select(ChatSession.featured_category)
+            .where(
+                ChatSession.is_featured.is_(True),
+                ChatSession.featured_category.isnot(None),
+            )
+            .distinct()
+        )
+        result = await self.session.exec(query)
+        return [cat for cat in result.all() if cat]

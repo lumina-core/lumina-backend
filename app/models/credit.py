@@ -1,11 +1,16 @@
 """积分和邀请码模型"""
 
 import secrets
-from datetime import datetime, date
+from datetime import datetime, date, UTC
 from typing import Optional
 
 from pydantic import BaseModel
 from sqlmodel import Field, SQLModel
+
+
+def utc_now() -> datetime:
+    """返回当前 UTC 时间"""
+    return datetime.now(UTC)
 
 
 # ============ 用户积分系统 ============
@@ -23,8 +28,8 @@ class UserCredit(SQLModel, table=True):
     daily_used: int = Field(default=0, description="今日已使用积分")
     daily_limit: int = Field(default=100, description="每日使用上限")
     last_checkin_date: Optional[date] = Field(default=None, description="上次签到日期")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class UserCreditLog(SQLModel, table=True):
@@ -38,7 +43,7 @@ class UserCreditLog(SQLModel, table=True):
     balance: int = Field(description="变动后余额")
     type: str = Field(max_length=20, description="类型: checkin/invite/usage/bonus")
     description: Optional[str] = Field(default=None, max_length=200)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
 
 
 # ============ 邀请码系统（可选，用于额外奖励）============
@@ -52,7 +57,7 @@ class InviteCode(SQLModel, table=True):
     code: str = Field(primary_key=True, max_length=32)
     credits: int = Field(default=0, description="剩余积分")
     is_active: bool = Field(default=True, description="是否启用")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
     updated_at: Optional[datetime] = Field(default=None)
 
     @staticmethod
@@ -72,7 +77,7 @@ class CreditUsageLog(SQLModel, table=True):
     output_tokens: int = Field(default=0)
     credits_deducted: int = Field(default=0)
     model: Optional[str] = Field(default=None, max_length=100)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
 
 
 class InviteCodeCreate(SQLModel):

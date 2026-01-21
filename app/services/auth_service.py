@@ -1,6 +1,6 @@
 """认证服务"""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Optional
 
 import bcrypt
@@ -28,7 +28,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def create_access_token(user_id: int, expires_delta: Optional[timedelta] = None) -> str:
     """创建访问Token"""
-    expire = datetime.utcnow() + (
+    expire = datetime.now(UTC) + (
         expires_delta or timedelta(minutes=settings.jwt_access_token_expire_minutes)
     )
     to_encode = {"sub": str(user_id), "exp": expire, "type": "access"}
@@ -39,7 +39,7 @@ def create_access_token(user_id: int, expires_delta: Optional[timedelta] = None)
 
 def create_refresh_token(user_id: int) -> str:
     """创建刷新Token"""
-    expire = datetime.utcnow() + timedelta(days=settings.jwt_refresh_token_expire_days)
+    expire = datetime.now(UTC) + timedelta(days=settings.jwt_refresh_token_expire_days)
     to_encode = {"sub": str(user_id), "exp": expire, "type": "refresh"}
     return jwt.encode(
         to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm
@@ -84,7 +84,7 @@ async def create_verification_code(
 ) -> EmailVerification:
     """创建验证码"""
     code = EmailVerification.generate_code()
-    expires_at = datetime.utcnow() + timedelta(
+    expires_at = datetime.now(UTC) + timedelta(
         minutes=settings.verification_code_expire_minutes
     )
 
@@ -107,7 +107,7 @@ async def verify_email_code(
             EmailVerification.code == code,
             EmailVerification.purpose == purpose,
             ~EmailVerification.is_used,
-            EmailVerification.expires_at > datetime.utcnow(),
+            EmailVerification.expires_at > datetime.now(UTC),
         )
     )
     verification = result.one_or_none()
@@ -150,13 +150,7 @@ async def process_invite_reward(
 
     如果邀请码属于某个用户，则双方都获得积分奖励
     """
-    result = await session.exec(
-        select(User)
-        .where(User.id != new_user.id)
-        .join(InviteCode, User.invited_by_code == InviteCode.code)
-        .where(InviteCode.code == invite_code)
-    )
-
+    # 查找邀请码
     result = await session.exec(
         select(InviteCode).where(InviteCode.code == invite_code)
     )
@@ -165,15 +159,26 @@ async def process_invite_reward(
     if not invite:
         return None
 
+    # 查找使用该邀请码注册的用户（邀请人）
+    inviter_result = await session.exec(
+        select(User).where(
+            User.invited_by_code == invite_code,
+            User.id != new_user.id,
+        )
+    )
+    inviter = inviter_result.first()
+
     inviter_reward = settings.invite_reward_inviter
     invitee_reward = settings.invite_reward_invitee
 
+    # 更新邀请码积分池
     invite.credits += inviter_reward + invitee_reward
-    invite.updated_at = datetime.utcnow()
+    invite.updated_at = datetime.now(UTC)
     session.add(invite)
 
+    # 创建邀请关系记录（修复 bug: inviter_id 应为邀请人 ID）
     relation = InviteRelation(
-        inviter_id=new_user.id,
+        inviter_id=inviter.id if inviter else new_user.id,
         invitee_id=new_user.id,
         invite_code=invite_code,
         inviter_reward=inviter_reward,

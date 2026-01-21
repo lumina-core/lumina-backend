@@ -1,7 +1,12 @@
-from datetime import date, datetime
+from datetime import date, datetime, UTC
 from typing import Optional
 
 from sqlmodel import Field, SQLModel
+
+
+def utc_now() -> datetime:
+    """返回当前 UTC 时间"""
+    return datetime.now(UTC)
 
 
 class NewsArticleBase(SQLModel):
@@ -20,7 +25,7 @@ class NewsArticle(NewsArticleBase, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     created_at: datetime = Field(
-        default_factory=datetime.utcnow, description="创建时间", nullable=False
+        default_factory=utc_now, description="创建时间", nullable=False
     )
     updated_at: Optional[datetime] = Field(default=None, description="更新时间")
 
@@ -54,4 +59,4 @@ class NewsArticleUpdate(SQLModel):
 
     title: Optional[str] = Field(default=None, max_length=500)
     content: Optional[str] = None
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=utc_now)

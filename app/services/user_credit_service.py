@@ -1,6 +1,6 @@
 """用户积分服务"""
 
-from datetime import datetime, date
+from datetime import datetime, date, UTC
 from typing import Optional, Tuple
 
 from loguru import logger
@@ -56,7 +56,7 @@ async def reset_daily_usage_if_needed(
     # 检查是否需要重置（通过 updated_at 的日期判断）
     if credit.updated_at.date() < today:
         credit.daily_used = 0
-        credit.updated_at = datetime.utcnow()
+        credit.updated_at = datetime.now(UTC)
         session.add(credit)
         await session.commit()
         await session.refresh(credit)
@@ -104,7 +104,7 @@ async def daily_checkin(
     credit.credits += DAILY_CHECKIN_CREDITS
     credit.total_earned += DAILY_CHECKIN_CREDITS
     credit.last_checkin_date = today
-    credit.updated_at = datetime.utcnow()
+    credit.updated_at = datetime.now(UTC)
     session.add(credit)
 
     # 记录日志
@@ -132,7 +132,7 @@ async def add_invite_bonus(
     inviter_credit = await get_or_create_user_credit(session, inviter_id)
     inviter_credit.credits += INVITE_BONUS_INVITER
     inviter_credit.total_earned += INVITE_BONUS_INVITER
-    inviter_credit.updated_at = datetime.utcnow()
+    inviter_credit.updated_at = datetime.now(UTC)
     session.add(inviter_credit)
 
     log1 = UserCreditLog(
@@ -148,7 +148,7 @@ async def add_invite_bonus(
     invitee_credit = await get_or_create_user_credit(session, invitee_id)
     invitee_credit.credits += INVITE_BONUS_INVITEE
     invitee_credit.total_earned += INVITE_BONUS_INVITEE
-    invitee_credit.updated_at = datetime.utcnow()
+    invitee_credit.updated_at = datetime.now(UTC)
     session.add(invitee_credit)
 
     log2 = UserCreditLog(
@@ -201,7 +201,7 @@ async def deduct_user_credits(
     credit.credits -= credits_to_deduct
     credit.total_used += credits_to_deduct
     credit.daily_used += credits_to_deduct
-    credit.updated_at = datetime.utcnow()
+    credit.updated_at = datetime.now(UTC)
     session.add(credit)
 
     # 记录日志

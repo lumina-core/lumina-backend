@@ -1,11 +1,16 @@
 """认证相关模型"""
 
 import secrets
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 
 from pydantic import EmailStr
 from sqlmodel import Field, SQLModel
+
+
+def utc_now() -> datetime:
+    """返回当前 UTC 时间"""
+    return datetime.now(UTC)
 
 
 class User(SQLModel, table=True):
@@ -22,7 +27,7 @@ class User(SQLModel, table=True):
     invited_by_code: Optional[str] = Field(
         default=None, foreign_key="invite_codes.code", description="注册时使用的邀请码"
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
     updated_at: Optional[datetime] = Field(default=None)
 
 
@@ -39,7 +44,7 @@ class EmailVerification(SQLModel, table=True):
     )
     is_used: bool = Field(default=False)
     expires_at: datetime = Field(description="过期时间")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
 
     @staticmethod
     def generate_code() -> str:
@@ -62,7 +67,7 @@ class InviteRelation(SQLModel, table=True):
     )
     inviter_reward: int = Field(default=0, description="邀请人获得的积分奖励")
     invitee_reward: int = Field(default=0, description="被邀请人获得的积分奖励")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
 
 
 # ============ Request/Response Schemas ============

@@ -233,9 +233,9 @@ async def update_me(
     if request.name is not None:
         user.name = request.name
 
-    from datetime import datetime
+    from datetime import datetime, UTC
 
-    user.updated_at = datetime.utcnow()
+    user.updated_at = datetime.now(UTC)
     session.add(user)
     await session.commit()
     await session.refresh(user)
@@ -257,9 +257,9 @@ async def change_password(
 
     user.password_hash = hash_password(request.new_password)
 
-    from datetime import datetime
+    from datetime import datetime, UTC
 
-    user.updated_at = datetime.utcnow()
+    user.updated_at = datetime.now(UTC)
     session.add(user)
     await session.commit()
 

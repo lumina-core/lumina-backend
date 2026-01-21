@@ -1,6 +1,6 @@
 """邀请码管理 - 内部接口"""
 
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -211,7 +211,7 @@ async def update_invite_code(
     if add_credits is not None:
         invite.credits += add_credits
 
-    invite.updated_at = datetime.utcnow()
+    invite.updated_at = datetime.now(UTC)
     session.add(invite)
     await session.commit()
     await session.refresh(invite)

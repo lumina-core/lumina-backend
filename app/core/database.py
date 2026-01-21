@@ -53,14 +53,45 @@ async def create_tables():
         raise
 
 
+async def auto_migrate_columns():
+    """自动检查并添加缺失的列（仅适用于 SQLite）"""
+    migrations = [
+        # (表名, 列名, 列定义)
+        ("chat_sessions", "is_featured", "BOOLEAN DEFAULT 0"),
+        ("chat_sessions", "featured_category", "VARCHAR(50) DEFAULT NULL"),
+        ("chat_sessions", "featured_order", "INTEGER DEFAULT 0"),
+    ]
+
+    async with engine.begin() as conn:
+        for table, column, definition in migrations:
+            existing = await conn.run_sync(
+                lambda sync_conn: sync_conn.execute(
+                    __import__("sqlalchemy").text(f"PRAGMA table_info({table})")
+                ).fetchall()
+            )
+            existing_columns = {row[1] for row in existing}
+
+            if column not in existing_columns:
+                try:
+                    await conn.run_sync(
+                        lambda sync_conn, t=table, c=column, d=definition: sync_conn.execute(
+                            __import__("sqlalchemy").text(f"ALTER TABLE {t} ADD COLUMN {c} {d}")
+                        )
+                    )
+                    logger.info(f"✓ 自动添加列: {table}.{column}")
+                except Exception as e:
+                    logger.warning(f"添加列 {table}.{column} 失败: {e}")
+
+
 async def init_database():
-    """初始化数据库（检查数据库 + 创建表）"""
+    """初始化数据库（检查数据库 + 创建表 + 自动迁移）"""
     logger.info("=" * 60)
     logger.info("开始初始化数据库")
     logger.info("=" * 60)
 
     await ensure_database_exists()
     await create_tables()
+    await auto_migrate_columns()
 
     logger.info("=" * 60)
     logger.info("数据库初始化完成")
