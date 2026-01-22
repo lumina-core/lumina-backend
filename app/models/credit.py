@@ -46,7 +46,7 @@ class UserCreditLog(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utc_now)
 
 
-# ============ 邀请码系统（可选，用于额外奖励）============
+# ============ 邀请码系统 ============
 
 
 class InviteCode(SQLModel, table=True):
@@ -55,35 +55,29 @@ class InviteCode(SQLModel, table=True):
     __tablename__ = "invite_codes"
 
     code: str = Field(primary_key=True, max_length=32)
-    credits: int = Field(default=0, description="剩余积分")
+    owner_id: Optional[int] = Field(
+        default=None,
+        foreign_key="users.id",
+        unique=True,
+        index=True,
+        description="邀请码所属用户ID（用户专属邀请码）",
+    )
+    use_count: int = Field(default=0, description="被使用次数")
     is_active: bool = Field(default=True, description="是否启用")
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: Optional[datetime] = Field(default=None)
 
     @staticmethod
-    def generate_code(length: int = 16) -> str:
-        """生成随机邀请码"""
-        return secrets.token_urlsafe(length)[:length].upper()
-
-
-class CreditUsageLog(SQLModel, table=True):
-    """积分使用记录"""
-
-    __tablename__ = "credit_usage_logs"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    invite_code: str = Field(index=True, foreign_key="invite_codes.code")
-    input_tokens: int = Field(default=0)
-    output_tokens: int = Field(default=0)
-    credits_deducted: int = Field(default=0)
-    model: Optional[str] = Field(default=None, max_length=100)
-    created_at: datetime = Field(default_factory=utc_now)
+    def generate_code(length: int = 6) -> str:
+        """生成用户专属邀请码，格式: LUMINA-XXXXXX"""
+        chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # 排除易混淆字符
+        random_part = "".join(secrets.choice(chars) for _ in range(length))
+        return f"LUMINA-{random_part}"
 
 
 class InviteCodeCreate(SQLModel):
     """创建邀请码请求"""
 
-    credits: int = Field(default=10000, ge=0, description="初始积分")
     code: Optional[str] = Field(
         default=None, description="自定义邀请码，不填则自动生成"
     )
@@ -93,17 +87,8 @@ class InviteCodeRead(SQLModel):
     """邀请码响应"""
 
     code: str
-    credits: int
     is_active: bool
     created_at: datetime
-
-
-class CreditBalance(SQLModel):
-    """积分余额响应（旧版，兼容邀请码）"""
-
-    code: str
-    credits: int
-    is_active: bool
 
 
 # ============ 新版用户积分响应 ============
@@ -130,3 +115,38 @@ class CheckinResponse(BaseModel):
     credits_earned: int
     current_credits: int
     streak_days: int  # 连续签到天数（预留）
+
+
+# ============ 邀请码相关响应 ============
+
+
+class MyInviteCodeResponse(BaseModel):
+    """我的邀请码响应"""
+
+    code: str
+    use_count: int
+    invite_url: str
+
+
+class InviteStatsResponse(BaseModel):
+    """邀请统计响应"""
+
+    total_invited: int
+    total_reward_earned: int
+
+
+class InviteeInfo(BaseModel):
+    """被邀请人信息"""
+
+    id: int
+    email: str
+    name: Optional[str]
+    reward_earned: int
+    invited_at: datetime
+
+
+class InviteListResponse(BaseModel):
+    """邀请列表响应"""
+
+    invitees: list[InviteeInfo]
+    total: int

@@ -32,5 +32,8 @@ class Settings(BaseSettings):
     invite_reward_inviter: int = 500  # 邀请人奖励积分
     invite_reward_invitee: int = 200  # 被邀请人奖励积分
 
+    # 前端地址（用于生成邀请链接）
+    frontend_url: str = "https://lumina.ai"
+
 
 settings = Settings()

@@ -10,12 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.database import get_session
 from app.models.auth import User
-from app.models.credit import (
-    CreditUsageLog,
-    InviteCode,
-    InviteCodeCreate,
-    InviteCodeRead,
-)
+from app.models.credit import InviteCode, InviteCodeCreate, InviteCodeRead
 from app.services.credit_service import create_invite_code, get_invite_code
 
 router = APIRouter()
@@ -23,11 +18,10 @@ router = APIRouter()
 
 class InviteCodeDetail(BaseModel):
     code: str
-    credits: int
     is_active: bool
     created_at: datetime
     registered_users: int
-    total_tokens_used: int
+    use_count: int
 
 
 class InviteCodeListResponse(BaseModel):
@@ -35,24 +29,11 @@ class InviteCodeListResponse(BaseModel):
     total: int
 
 
-class UsageLogItem(BaseModel):
-    id: int
-    input_tokens: int
-    output_tokens: int
-    credits_deducted: int
-    model: Optional[str]
-    created_at: datetime
-
-
 class InviteCodeUsageResponse(BaseModel):
     code: str
-    credits: int
     is_active: bool
     registered_users: List[dict]
-    usage_logs: List[UsageLogItem]
-    total_input_tokens: int
-    total_output_tokens: int
-    total_credits_used: int
+    use_count: int
 
 
 @router.post("", response_model=InviteCodeRead)
@@ -63,12 +44,10 @@ async def create_invite(
     """创建邀请码"""
     invite = await create_invite_code(
         session,
-        credits=request.credits,
         code=request.code,
     )
     return InviteCodeRead(
         code=invite.code,
-        credits=invite.credits,
         is_active=invite.is_active,
         created_at=invite.created_at,
     )
@@ -102,26 +81,13 @@ async def list_invite_codes(
         )
         registered_users = user_count_result.one()
 
-        token_result = await session.exec(
-            select(
-                func.coalesce(
-                    func.sum(
-                        CreditUsageLog.input_tokens + CreditUsageLog.output_tokens
-                    ),
-                    0,
-                )
-            ).where(CreditUsageLog.invite_code == invite.code)
-        )
-        total_tokens = token_result.one()
-
         items.append(
             InviteCodeDetail(
                 code=invite.code,
-                credits=invite.credits,
                 is_active=invite.is_active,
                 created_at=invite.created_at,
                 registered_users=registered_users,
-                total_tokens_used=total_tokens,
+                use_count=invite.use_count,
             )
         )
 
@@ -154,43 +120,11 @@ async def get_invite_code_usage(
         for u in users
     ]
 
-    logs_result = await session.exec(
-        select(CreditUsageLog)
-        .where(CreditUsageLog.invite_code == code)
-        .order_by(CreditUsageLog.created_at.desc())
-        .limit(100)
-    )
-    logs = logs_result.all()
-    usage_logs = [
-        UsageLogItem(
-            id=log.id,
-            input_tokens=log.input_tokens,
-            output_tokens=log.output_tokens,
-            credits_deducted=log.credits_deducted,
-            model=log.model,
-            created_at=log.created_at,
-        )
-        for log in logs
-    ]
-
-    stats_result = await session.exec(
-        select(
-            func.coalesce(func.sum(CreditUsageLog.input_tokens), 0),
-            func.coalesce(func.sum(CreditUsageLog.output_tokens), 0),
-            func.coalesce(func.sum(CreditUsageLog.credits_deducted), 0),
-        ).where(CreditUsageLog.invite_code == code)
-    )
-    stats = stats_result.one()
-
     return InviteCodeUsageResponse(
         code=invite.code,
-        credits=invite.credits,
         is_active=invite.is_active,
         registered_users=registered_users,
-        usage_logs=usage_logs,
-        total_input_tokens=stats[0],
-        total_output_tokens=stats[1],
-        total_credits_used=stats[2],
+        use_count=invite.use_count,
     )
 
 
@@ -198,18 +132,15 @@ async def get_invite_code_usage(
 async def update_invite_code(
     code: str,
     is_active: Optional[bool] = None,
-    add_credits: Optional[int] = None,
     session: AsyncSession = Depends(get_session),
 ):
-    """更新邀请码（启用/禁用、充值积分）"""
+    """更新邀请码（启用/禁用）"""
     invite = await get_invite_code(session, code)
     if not invite:
         raise HTTPException(status_code=404, detail="邀请码不存在")
 
     if is_active is not None:
         invite.is_active = is_active
-    if add_credits is not None:
-        invite.credits += add_credits
 
     invite.updated_at = datetime.now(UTC)
     session.add(invite)
@@ -218,6 +149,6 @@ async def update_invite_code(
 
     return {
         "code": invite.code,
-        "credits": invite.credits,
         "is_active": invite.is_active,
+        "use_count": invite.use_count,
     }

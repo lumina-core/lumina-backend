@@ -40,7 +40,20 @@ from app.services.user_credit_service import (
     get_user_credit_info,
     daily_checkin,
 )
-from app.models.credit import UserCreditResponse, CheckinResponse
+from app.services.invite_service import (
+    get_or_create_user_invite_code,
+    get_invite_stats,
+    get_invitee_list,
+    get_invite_url,
+)
+from app.models.credit import (
+    UserCreditResponse,
+    CheckinResponse,
+    MyInviteCodeResponse,
+    InviteStatsResponse,
+    InviteListResponse,
+    InviteeInfo,
+)
 
 router = APIRouter()
 
@@ -135,6 +148,9 @@ async def register(
 
     # 创建用户积分账户（会自动赠送注册积分）
     await get_or_create_user_credit(session, user.id)
+
+    # 为新用户创建专属邀请码
+    await get_or_create_user_invite_code(session, user.id)
 
     # 如果有邀请码，处理邀请奖励
     if invite and request.invite_code:
@@ -296,4 +312,52 @@ async def checkin(
         credits_earned=credits_earned,
         current_credits=current_credits,
         streak_days=1,  # 暂时固定为1，后续可以实现连续签到
+    )
+
+
+# ============ 邀请码相关接口 ============
+
+
+@router.get("/me/invite-code", response_model=MyInviteCodeResponse)
+async def get_my_invite_code(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    获取当前用户的专属邀请码
+    """
+    invite_code = await get_or_create_user_invite_code(session, user.id)
+    return MyInviteCodeResponse(
+        code=invite_code.code,
+        use_count=invite_code.use_count,
+        invite_url=get_invite_url(invite_code.code),
+    )
+
+
+@router.get("/me/invite-stats", response_model=InviteStatsResponse)
+async def get_my_invite_stats(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    获取邀请统计（邀请人数、获得积分）
+    """
+    stats = await get_invite_stats(session, user.id)
+    return InviteStatsResponse(**stats)
+
+
+@router.get("/me/invitees", response_model=InviteListResponse)
+async def get_my_invitees(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    limit: int = 20,
+    offset: int = 0,
+):
+    """
+    获取邀请的用户列表
+    """
+    invitees, total = await get_invitee_list(session, user.id, limit, offset)
+    return InviteListResponse(
+        invitees=[InviteeInfo(**i) for i in invitees],
+        total=total,
     )

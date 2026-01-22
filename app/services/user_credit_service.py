@@ -124,6 +124,33 @@ async def daily_checkin(
     return True, "签到成功", DAILY_CHECKIN_CREDITS, credit.credits
 
 
+async def add_user_credits(
+    session: AsyncSession,
+    user_id: int,
+    amount: int,
+    credit_type: str = "bonus",
+    description: str = "",
+) -> UserCredit:
+    """通用增加用户积分方法"""
+    credit = await get_or_create_user_credit(session, user_id)
+    credit.credits += amount
+    credit.total_earned += amount
+    credit.updated_at = datetime.now(UTC)
+    session.add(credit)
+
+    log = UserCreditLog(
+        user_id=user_id,
+        amount=amount,
+        balance=credit.credits,
+        type=credit_type,
+        description=description,
+    )
+    session.add(log)
+
+    # 注意：不在这里 commit，由调用方统一 commit
+    return credit
+
+
 async def add_invite_bonus(
     session: AsyncSession, inviter_id: int, invitee_id: int
 ) -> None:
@@ -182,7 +209,7 @@ async def deduct_user_credits(
 
     # 计算消耗积分 (简单按 token 数计算，可调整)
     total_tokens = input_tokens + output_tokens
-    credits_to_deduct = max(1, total_tokens // 100)  # 每100 token 消耗1积分
+    credits_to_deduct = max(1, total_tokens // 1000)  # 每1000 token 消耗1积分
 
     # 检查每日限额
     daily_remaining = credit.daily_limit - credit.daily_used

@@ -150,46 +150,65 @@ async def process_invite_reward(
 
     如果邀请码属于某个用户，则双方都获得积分奖励
     """
+    from app.services.user_credit_service import add_user_credits
+
     # 查找邀请码
     result = await session.exec(
         select(InviteCode).where(InviteCode.code == invite_code)
     )
     invite = result.one_or_none()
 
-    if not invite:
+    if not invite or not invite.owner_id:
         return None
 
-    # 查找使用该邀请码注册的用户（邀请人）
-    inviter_result = await session.exec(
-        select(User).where(
-            User.invited_by_code == invite_code,
-            User.id != new_user.id,
-        )
-    )
-    inviter = inviter_result.first()
+    # 邀请人就是邀请码的所有者
+    inviter_id = invite.owner_id
+
+    # 不能自己邀请自己
+    if inviter_id == new_user.id:
+        return None
 
     inviter_reward = settings.invite_reward_inviter
     invitee_reward = settings.invite_reward_invitee
 
-    # 更新邀请码积分池
-    invite.credits += inviter_reward + invitee_reward
+    # 更新邀请码使用次数
+    invite.use_count += 1
     invite.updated_at = datetime.now(UTC)
     session.add(invite)
 
-    # 创建邀请关系记录（修复 bug: inviter_id 应为邀请人 ID）
+    # 创建邀请关系记录
     relation = InviteRelation(
-        inviter_id=inviter.id if inviter else new_user.id,
+        inviter_id=inviter_id,
         invitee_id=new_user.id,
         invite_code=invite_code,
         inviter_reward=inviter_reward,
         invitee_reward=invitee_reward,
     )
     session.add(relation)
+
+    # 给邀请人发放积分奖励
+    await add_user_credits(
+        session,
+        inviter_id,
+        inviter_reward,
+        credit_type="invite",
+        description=f"邀请用户 {new_user.email} 注册奖励",
+    )
+
+    # 给被邀请人发放积分奖励
+    await add_user_credits(
+        session,
+        new_user.id,
+        invitee_reward,
+        credit_type="invite",
+        description="受邀注册奖励",
+    )
+
     await session.commit()
 
     logger.info(
-        f"邀请奖励已发放: 邀请码={invite_code}, 新用户={new_user.email}, "
-        f"奖励积分={inviter_reward + invitee_reward}"
+        f"邀请奖励已发放: 邀请码={invite_code}, 邀请人={inviter_id}, "
+        f"新用户={new_user.email}, 邀请人奖励={inviter_reward}, 被邀请人奖励={invitee_reward}"
     )
     return relation
 
