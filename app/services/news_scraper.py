@@ -63,6 +63,53 @@ class NewsScraperService:
         delay = random.uniform(self.REQUEST_DELAY_MIN, self.REQUEST_DELAY_MAX)
         await asyncio.sleep(delay)
 
+    @staticmethod
+    def _is_full_broadcast(title: str) -> bool:
+        """判断是否为完整版合集链接（非单条新闻，无正文内容）"""
+        return title.startswith("《新闻联播》")
+
+    @staticmethod
+    def _parse_news_list_html(html: str) -> List[dict]:
+        """从 HTML 解析新闻列表，兼容新旧两种页面格式
+
+        早期格式（~2017-）：标题在 <div class="title"> 中，<a> 无 title 属性
+        新格式（~2022+）：标题在 <a title="..."> 属性中
+        """
+        parser = HTMLParser(html)
+        news_list: List[dict] = []
+        seen_urls: set[str] = set()
+
+        for li in parser.css("li"):
+            a_tags = li.css("a")
+            if not a_tags:
+                continue
+
+            href = ""
+            title = ""
+
+            for a in a_tags:
+                h = a.attributes.get("href", "")
+                if h and "cctv.com" in h:
+                    href = h
+                    title = a.attributes.get("title", "")
+                    break
+
+            if not href or href in seen_urls:
+                continue
+
+            if not title:
+                title_div = li.css_first("div.title")
+                if title_div:
+                    title = title_div.text(strip=True)
+
+            if not title or not href:
+                continue
+
+            seen_urls.add(href)
+            news_list.append({"title": title, "url": href})
+
+        return news_list
+
     async def fetch_news_list(self, target_date: date) -> List[dict]:
         """获取指定日期的新闻列表
 
@@ -87,17 +134,16 @@ class NewsScraperService:
         response = await client.get(daily_url)
         response.raise_for_status()
 
-        news_list = []
-        html_segments = response.text.split('    			<a href="')[2:]
+        all_news = self._parse_news_list_html(response.text)
 
-        for segment in html_segments:
-            try:
-                news_url = segment.split('"')[0]
-                news_title = segment.split('title="')[1].split('">')[0]
-                news_list.append({"title": news_title, "url": news_url})
-            except IndexError:
-                logger.warning(f"解析新闻项失败，跳过: {segment[:50]}...")
-                continue
+        # 过滤掉完整版合集链接（无正文内容）
+        news_list = [
+            item for item in all_news if not self._is_full_broadcast(item["title"])
+        ]
+
+        filtered_count = len(all_news) - len(news_list)
+        if filtered_count > 0:
+            logger.debug(f"过滤掉 {filtered_count} 条完整版合集链接")
 
         logger.info(f"成功获取 {len(news_list)} 条新闻")
         return news_list
