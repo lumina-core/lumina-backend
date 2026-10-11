@@ -1,8 +1,15 @@
-# Lumina Backend
+# Lumina Backend — Historical Prototype
 
-FastAPI backend service for Lumina application.
+This repository contains the earlier FastAPI prototype. **It is not Lumina's current production backend.**
 
-## Quick Start
+- Current public frontend and architecture: [lumina-core/lumina-frontend](https://github.com/lumina-core/lumina-frontend).
+- Current product: [Lumina](https://lumina-news-agent.vercel.app).
+- Production accounts, sessions, credits and data are served by a separate **private Data Hub backend**. This repository is not a self-hosting substitute for that private service. Production deployment, credentials and data are outside the scope of this public prototype.
+- The instructions below describe the historical prototype only. They are not the current production deployment runbook; do not point it at production databases or credentials.
+
+本仓库保留历史原型，不承载当前线上服务；当前架构及开源范围以公开前端仓库说明为准。
+
+## Historical Prototype Setup
 
 ### 1. Clone and Setup Environment
 
@@ -131,24 +138,16 @@ sudo systemctl restart lumina   # 重启生效
 sudo systemctl status lumina    # 确认正常
 ```
 
-## API Endpoints
+## Historical API and Source Layout
 
-See [DATABASE.md](DATABASE.md) for detailed API documentation.
+Historical route declarations are in [`app/api/routes/`](app/api/routes/); the prototype's generated API documentation is available at `http://localhost:8000/docs` when running an isolated local instance.
 
-## Project Structure
-
-```
-app/
-├── core/
-│   ├── config.py          # Application configuration
-│   └── database.py        # Database engine and session
-├── models/
-│   └── user.py            # SQLModel models
-└── api/routes/
-    └── users.py           # User routes
-scripts/
-└── setup.sh               # Setup script for initialization
-```
+- [`app/agents/`](app/agents/): prototype agent and retrieval code.
+- [`app/core/`](app/core/): configuration, database and shared infrastructure.
+- [`app/models/`](app/models/): model definitions.
+- [`app/repositories/`](app/repositories/) and [`app/services/`](app/services/): persistence and service code.
+- [`app/tasks/`](app/tasks/): background tasks.
+- [`scripts/`](scripts/): maintenance utilities for the historical prototype; review their effects before running them.
 
 ## Data Migration
 
